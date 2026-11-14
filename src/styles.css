@@ -747,9 +747,68 @@
 .full-map-shell { position: relative; width: 100%; height: calc(100vh - 54px); min-height: 460px; overflow: hidden; background: #0f1713; }
 .full-map-canvas { width: 100%; height: 100%; z-index: 0; }
 .full-map-loading { position: absolute; inset: 0; display: grid; place-items: center; background: oklch(0.2 0.03 155 / 70%); color: #fff; font-size: 13px; font-weight: 600; z-index: 5; pointer-events: none; }
-.full-map-hud-top { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; pointer-events: none; }
+.full-map-hud-top { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; pointer-events: none; }
+.full-map-hud-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1; min-width: 280px; }
 .full-map-pill, .full-map-actions { pointer-events: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; background: oklch(0.99 0.005 110 / 88%); backdrop-filter: blur(10px); border: 1px solid oklch(0.85 0.02 140 / 70%); box-shadow: 0 8px 24px oklch(0.15 0.03 155 / 18%); font-size: 12px; color: var(--foreground); }
+.full-map-pill { height: 40px; }
 .full-map-pill .hud-sep { opacity: 0.45; }
+
+/* No. 1: Stretched options bar on the top right (matches No. 2 width, no cropping) */
+@media (min-width: 768px) {
+  .full-map-actions { width: 450px; justify-content: space-between; flex-wrap: nowrap; gap: 6px; padding: 4px 6px; height: 40px; flex-shrink: 0; }
+  .full-map-actions > button { flex: 1 1 auto; justify-content: center; white-space: nowrap; min-width: 0; padding-inline: 10px; }
+}
+
+/* No. 2: Larger floating Farm Profile panel displayed on the right after drawing */
+.full-map-profile-panel {
+  position: absolute;
+  top: 66px;
+  right: 14px;
+  z-index: 11;
+  width: min(450px, calc(100% - 28px));
+  max-height: calc(100% - 155px);
+  overflow-y: auto;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: oklch(0.99 0.005 110 / 96%);
+  backdrop-filter: blur(12px);
+  border: 1px solid oklch(0.85 0.02 140 / 75%);
+  box-shadow: 0 20px 48px rgba(10, 24, 16, 0.28);
+  color: var(--foreground);
+  animation: landmarkFadeIn 0.2s ease-out;
+}
+.full-map-profile-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.full-map-profile-head h3 { font-size: 19px; font-weight: 700; line-height: 1.2; margin-top: 2px; }
+.full-map-profile-head-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.full-map-profile-close { width: 28px; height: 28px; border-radius: 7px; border: 0; background: rgba(15, 23, 19, 0.07); color: var(--foreground); display: grid; place-items: center; cursor: pointer; }
+.full-map-profile-close:hover { background: rgba(15, 23, 19, 0.14); }
+.full-map-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.full-map-profile-grid .form-field { gap: 5px; }
+.full-map-profile-grid .form-field label { font-size: 12px; }
+.full-map-profile-grid .form-field small { font-size: 11px; line-height: 1.35; }
+.full-map-profile-grid .full-span { grid-column: 1 / -1; }
+.full-map-profile-foot { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.full-map-profile-saved { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+@media (max-width: 767px) {
+  .full-map-profile-panel { top: auto; bottom: 14px; left: 14px; right: 14px; width: auto; max-height: 55%; }
+}
+
+/* Location Search Box in Full Map HUD (stretched to fill available space) */
+.full-map-search-wrap { position: relative; pointer-events: auto; flex: 1; min-width: 220px; }
+.full-map-search-box { display: flex; align-items: center; gap: 8px; padding: 0 14px; height: 40px; border-radius: 10px; background: oklch(0.99 0.005 110 / 92%); backdrop-filter: blur(10px); border: 1px solid oklch(0.85 0.02 140 / 70%); box-shadow: 0 8px 24px oklch(0.15 0.03 155 / 18%); transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; }
+.full-map-search-box:focus-within { border-color: #16a34a; box-shadow: 0 8px 24px rgba(22, 163, 74, 0.22), 0 0 0 2px rgba(34, 197, 94, 0.25); background: #ffffff; }
+.full-map-search-box input { border: none; background: transparent; outline: none; font-size: 13px; color: var(--foreground); width: 100%; }
+.full-map-search-box input::placeholder { color: var(--muted-foreground); opacity: 0.85; }
+.full-map-search-clear { border: none; background: transparent; color: var(--muted-foreground); cursor: pointer; padding: 2px; border-radius: 4px; display: grid; place-items: center; transition: color 0.12s ease; }
+.full-map-search-clear:hover { color: var(--foreground); }
+.full-map-search-dropdown { position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: #ffffff; border-radius: 10px; border: 1px solid rgba(0, 0, 0, 0.1); box-shadow: 0 16px 36px rgba(15, 23, 19, 0.22); overflow: hidden; z-index: 25; max-height: 280px; overflow-y: auto; }
+.full-map-search-item { width: 100%; text-align: left; padding: 9px 12px; border: none; background: transparent; cursor: pointer; display: flex; align-items: flex-start; gap: 9px; font-size: 12px; border-bottom: 1px solid rgba(0, 0, 0, 0.04); transition: background 0.12s ease; }
+.full-map-search-item:last-child { border-bottom: none; }
+.full-map-search-item:hover, .full-map-search-item:focus { background: #f0fdf4; }
+.full-map-search-item strong { display: block; font-size: 12.5px; color: #14261c; font-weight: 600; line-height: 1.3; }
+.full-map-search-item span { display: block; font-size: 11px; color: #64748b; margin-top: 2px; line-height: 1.3; }
+.full-map-search-item .search-item-icon { margin-top: 2px; color: #16a34a; flex-shrink: 0; }
+.full-map-search-empty { padding: 12px 14px; text-align: center; font-size: 12px; color: #64748b; line-height: 1.4; }
 .full-map-zoom { position: absolute; right: 14px; bottom: 20px; z-index: 10; display: flex; flex-direction: column; gap: 6px; }
 .full-map-zoom button { box-shadow: 0 6px 18px oklch(0.15 0.03 155 / 22%); backdrop-filter: blur(8px); }
 .full-map-hud-bottom { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 10; padding: 9px 14px; border-radius: 999px; background: oklch(0.2 0.03 155 / 90%); color: #fff; font-size: 12px; font-weight: 500; box-shadow: 0 8px 24px oklch(0.1 0.02 155 / 30%); max-width: calc(100% - 100px); text-align: center; }

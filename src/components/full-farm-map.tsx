@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, GripHorizontal, Layers, Locate, MapPin, Navigation, Pencil, RotateCcw, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowRight, BadgeCheck, Check, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, Sprout, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   loadLeaflet,
   type CircleInstance,
@@ -20,6 +22,81 @@ type LandmarkInfo = {
   accuracyMeters: number | null;
   source: "gps" | "pin";
 };
+
+type SearchResult = {
+  title: string;
+  subtitle: string;
+  latitude: number;
+  longitude: number;
+};
+
+async function searchLocations(
+  query: string,
+  nearLat: number,
+  nearLon: number,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  // Match direct coordinates: e.g. "8.32629, 124.97766" or "8.32629 124.97766"
+  const coordMatch = trimmed.match(/^([-+]?\d{1,2}(?:\.\d+)?)[,\s]+([-+]?\d{1,3}(?:\.\d+)?)$/);
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1]);
+    const lon = parseFloat(coordMatch[2]);
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      return [
+        {
+          title: `Coordinates (${lat.toFixed(5)}°, ${lon.toFixed(5)}°)`,
+          subtitle: "Jump directly to coordinates",
+          latitude: lat,
+          longitude: lon,
+        },
+      ];
+    }
+  }
+
+  const url = `https://photon.komoot.io/api/?${new URLSearchParams({
+    q: trimmed,
+    lat: String(nearLat),
+    lon: String(nearLon),
+    limit: "5",
+  })}`;
+
+  const res = await fetch(url, signal ? { signal } : undefined);
+  if (!res.ok) throw new Error("Search failed");
+  const data = (await res.json()) as {
+    features?: Array<{
+      geometry: { coordinates: [number, number] };
+      properties?: {
+        name?: string;
+        street?: string;
+        district?: string;
+        city?: string;
+        county?: string;
+        state?: string;
+        country?: string;
+      };
+    }>;
+  };
+
+  const results: SearchResult[] = [];
+  for (const feature of data.features || []) {
+    const p = feature.properties || {};
+    const [lon, lat] = feature.geometry.coordinates;
+    const title = p.name || p.street || p.district || p.city || "Found location";
+    const parts = [p.district, p.city || p.county, p.state, p.country].filter(
+      (v) => v && v !== title,
+    );
+    results.push({
+      title,
+      subtitle: parts.length ? parts.join(", ") : `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`,
+      latitude: lat,
+      longitude: lon,
+    });
+  }
+  return results;
+}
 
 async function lookupLandmark(lat: number, lon: number, signal?: AbortSignal): Promise<{ title: string; subtitle: string }> {
   const url = `https://photon.komoot.io/reverse?${new URLSearchParams({
@@ -73,18 +150,36 @@ function createBaseLayer(L: Leaflet, style: MapStyle, onTileError: () => void): 
   }).on("tileerror", onTileError);
 }
 
+export type FarmProfileData = {
+  place: string;
+  area: string;
+  crop: string;
+  previous: string;
+  ph: string;
+  soil: string;
+  irrigation: string;
+  drainage: string;
+  planted: string;
+};
+
 export function FullFarmMap({
   location,
   onChange,
   boundary,
   onBoundary,
   areaLabel,
+  farm,
+  onUpdateFarm,
+  onContinue,
 }: {
   location: Coordinates;
   onChange: (point: Coordinates) => void;
   boundary: Coordinates[];
   onBoundary: (points: Coordinates[]) => void;
   areaLabel: string;
+  farm: FarmProfileData;
+  onUpdateFarm: (key: keyof FarmProfileData, value: string) => void;
+  onContinue: () => void;
 }) {
   const [mapStyle, setMapStyle] = useState<MapStyle>("satellite");
   const [drawing, setDrawing] = useState(false);
@@ -94,9 +189,80 @@ export function FullFarmMap({
   const [error, setError] = useState("");
   const [landmark, setLandmark] = useState<LandmarkInfo | null>(null);
   const [landmarkLoading, setLandmarkLoading] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(boundary.length >= 3);
   const [modalOffset, setModalOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
+
+  // Location search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
+    const timer = setTimeout(() => {
+      searchLocations(searchQuery, location.latitude, location.longitude, controller.signal)
+        .then((items) => {
+          if (!controller.signal.aborted) {
+            setSearchResults(items);
+            setSearching(false);
+            setSearchOpen(true);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setSearching(false);
+          }
+        });
+    }, 280);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, location.latitude, location.longitude]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function handleSelectLocation(result: SearchResult) {
+    const next = { latitude: result.latitude, longitude: result.longitude };
+    onChange(next);
+    setSearchOpen(false);
+    setSearchQuery(result.title);
+    accuracyCircleRef.current?.setRadius(0);
+    accuracyCircleRef.current?.setLatLng([next.latitude, next.longitude]);
+
+    const map = mapRef.current;
+    if (map?.flyTo) {
+      map.flyTo([next.latitude, next.longitude], 16, { duration: 1.1 });
+    } else {
+      map?.setView([next.latitude, next.longitude], 16);
+    }
+
+    showLandmarkFor(next.latitude, next.longitude, "pin", null);
+  }
 
   const handleModalDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -402,13 +568,85 @@ export function FullFarmMap({
 
       {/* Minimalist floating HUD — no bulky cards */}
       <div className="full-map-hud-top">
-        <div className="full-map-pill">
-          <MapPin size={14} />
-          <span>
-            {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
-          </span>
-          <span className="hud-sep">·</span>
-          <strong>{drawing && draftArea ? draftArea : `${areaLabel} ha`}</strong>
+        <div className="full-map-hud-left">
+          <div className="full-map-pill">
+            <MapPin size={14} />
+            <span>
+              {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
+            </span>
+            <span className="hud-sep">·</span>
+            <strong>{drawing && draftArea ? draftArea : `${areaLabel} ha`}</strong>
+          </div>
+
+          <div className="full-map-search-wrap" ref={searchWrapRef}>
+            <div className="full-map-search-box">
+              {searching ? (
+                <Loader2 size={15} className="animate-spin text-muted-foreground flex-shrink-0" />
+              ) : (
+                <Search size={15} className="text-muted-foreground flex-shrink-0" />
+              )}
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => {
+                  if (searchResults.length > 0) setSearchOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setSearchOpen(false);
+                  if (e.key === "Enter" && searchResults[0]) {
+                    e.preventDefault();
+                    handleSelectLocation(searchResults[0]);
+                  }
+                }}
+                placeholder="Search municipality, barangay, or coords…"
+                aria-label="Search map location"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="full-map-search-clear"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchResults([]);
+                    setSearchOpen(false);
+                  }}
+                  aria-label="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {searchOpen && searchQuery.trim() && (
+              <div className="full-map-search-dropdown" role="listbox">
+                {searchResults.length > 0 ? (
+                  searchResults.map((item, index) => (
+                    <button
+                      key={`${item.latitude}-${item.longitude}-${index}`}
+                      type="button"
+                      className="full-map-search-item"
+                      role="option"
+                      onClick={() => handleSelectLocation(item)}
+                    >
+                      <MapPin size={14} className="search-item-icon" />
+                      <div>
+                        <strong>{item.title}</strong>
+                        <span>{item.subtitle}</span>
+                      </div>
+                    </button>
+                  ))
+                ) : !searching ? (
+                  <div className="full-map-search-empty">
+                    No matching places found. Try typing coordinates (e.g. 8.326, 124.978).
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="full-map-actions">
@@ -448,7 +686,10 @@ export function FullFarmMap({
                   type="button"
                   size="sm"
                   variant="destructive"
-                  onClick={() => onBoundary([])}
+                  onClick={() => {
+                    onBoundary([]);
+                    setProfileOpen(false);
+                  }}
                 >
                   <Trash2 size={14} />
                   Clear
@@ -466,6 +707,7 @@ export function FullFarmMap({
                     const measured = measureFarmBoundary(draft);
                     onBoundary(measured.points);
                     setDrawing(false);
+                    setProfileOpen(true);
                     setError("");
                   } catch (err) {
                     setError(err instanceof Error ? err.message : "Invalid boundary.");
@@ -502,6 +744,156 @@ export function FullFarmMap({
           )}
         </div>
       </div>
+
+      {/* No. 2: Floating Farm Profile Panel shown after drawing boundary */}
+      {boundary.length >= 3 && !drawing && profileOpen && (
+        <aside className="full-map-profile-panel" aria-label="Drawn field farm profile">
+          <div className="full-map-profile-head">
+            <div>
+              <span className="panel-eyebrow">
+                <Sprout size={12} /> FARM PROFILE <span className="panel-demotag">DEMO</span>
+              </span>
+              <h3>Make it yours.</h3>
+            </div>
+            <div className="full-map-profile-head-right">
+              <span className="profile-status">
+                <BadgeCheck size={13} /> SAVED HERE
+              </span>
+              <button
+                type="button"
+                className="full-map-profile-close"
+                aria-label="Close farm profile panel"
+                onClick={() => setProfileOpen(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="full-map-profile-grid">
+            <div className="form-field full-span">
+              <Label htmlFor="map-farm-location">Municipality / city (automatic, editable)</Label>
+              <Input
+                id="map-farm-location"
+                value={farm.place}
+                onChange={(e) => onUpdateFarm("place", e.target.value)}
+              />
+              <small>Detected from your selected farm point when public records are available.</small>
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-area-ha">Farm area (ha)</Label>
+              <div className="input-unit-wrap">
+                <Input id="map-area-ha" readOnly value={farm.area} />
+                <span>ha</span>
+              </div>
+              <small>Calculated from drawn boundary.</small>
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-plant-date">Planned next planting</Label>
+              <Input
+                id="map-plant-date"
+                type="date"
+                value={farm.planted}
+                onChange={(e) => onUpdateFarm("planted", e.target.value)}
+              />
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-current-crop">Current crop</Label>
+              <select
+                id="map-current-crop"
+                className="form-select"
+                value={farm.crop}
+                onChange={(e) => onUpdateFarm("crop", e.target.value)}
+              >
+                {["Corn", "Mungbean", "Sorghum", "Sweet potato", "Rice", "Cassava"].map((crop) => (
+                  <option key={crop}>{crop}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-previous-crop">Previous crop</Label>
+              <select
+                id="map-previous-crop"
+                className="form-select"
+                value={farm.previous}
+                onChange={(e) => onUpdateFarm("previous", e.target.value)}
+              >
+                {["Mungbean", "Corn", "Sorghum", "Sweet potato", "Rice", "Cassava", "Fallow"].map((crop) => (
+                  <option key={crop}>{crop}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-soil-type">Soil texture / type</Label>
+              <Input
+                id="map-soil-type"
+                value={farm.soil}
+                placeholder="Awaiting public estimate"
+                onChange={(e) => onUpdateFarm("soil", e.target.value)}
+              />
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-soil-ph">Soil pH (water)</Label>
+              <Input
+                id="map-soil-ph"
+                type="number"
+                min="0"
+                max="14"
+                step="0.1"
+                placeholder="Unknown"
+                value={farm.ph}
+                onChange={(e) => onUpdateFarm("ph", e.target.value)}
+              />
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-irrigation">Irrigation</Label>
+              <select
+                id="map-irrigation"
+                className="form-select"
+                value={farm.irrigation}
+                onChange={(e) => onUpdateFarm("irrigation", e.target.value)}
+              >
+                {["Unknown", "Rain-fed", "Gravity-fed", "Pump-irrigated", "Drip irrigation", "Other"].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-field">
+              <Label htmlFor="map-drainage">Field drainage</Label>
+              <select
+                id="map-drainage"
+                className="form-select"
+                value={farm.drainage}
+                onChange={(e) => onUpdateFarm("drainage", e.target.value)}
+              >
+                {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="full-map-profile-foot">
+            <span className="full-map-profile-saved">
+              <span className="save-indicator">
+                <Check size={11} />
+              </span>
+              Saved in this browser
+            </span>
+            <Button type="button" size="sm" onClick={onContinue}>
+              Continue to crop planning <ArrowRight size={14} />
+            </Button>
+          </div>
+        </aside>
+      )}
 
       {/* Floating Landmark / Location Preview Modal */}
       {landmark && !drawing && (

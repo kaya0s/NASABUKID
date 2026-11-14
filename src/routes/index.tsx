@@ -239,6 +239,9 @@ function FieldShift() {
             onBoundary={updateBoundary}
             onChange={updateLocation}
             areaLabel={farm.area}
+            farm={farm}
+            onUpdateFarm={updateFarm}
+            onContinue={() => goTo("prevention")}
           />
         ) : (
         <div className="page-wrap">
@@ -246,7 +249,6 @@ function FieldShift() {
 
           {page === "overview" && <OverviewPage farm={farm} onPlan={() => goTo("farm")} onRecover={() => goTo("recovery")} onPrevention={() => goTo("prevention")} onChat={() => goTo("chat")} />}
           {page === "farm" && <FarmPage farm={farm} location={location} boundary={boundary} onBoundary={updateBoundary} onLocation={updateLocation} onUpdate={updateFarm} onContinue={() => goTo("prevention")} />}
-          <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
           {page === "prevention" && <>
             <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
             {historical && <div className="note-strip"><ShieldCheck size={16} /><span>Demo water context: actual NASA rainfall from {historical.start} to {historical.end}, using your planting month. Other ratings and thresholds remain illustrative. The charts above show the selected NASA year.</span><button onClick={() => setHistorical(null)}>Clear historical context</button></div>}
@@ -259,6 +261,7 @@ function FieldShift() {
           <footer className="page-footer"><span><Sprout size={14} /> Made for the seasons ahead.</span><span>FieldShift AI <span className="footer-divider">·</span> NASA Space Apps demo <span className="footer-divider">·</span> Historical NASA access · Demo scores · Gemini advisor</span></footer>
         </div>
         )}
+        <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
       </main>
 
       <Dialog open={evidenceOpen} onOpenChange={setEvidenceOpen}>
