@@ -33,7 +33,7 @@ Weather provenance is explicit. Recovery records cover the selected historical w
 
 Collect, with appropriate consent, farm/season identifiers, confirmed location, crop and cultivar, actual planting and harvest dates, stage, crop history, measured soil information, irrigation events, daily weather with quality flags, management/cost records, measured harvested area and yield. Recovery cases additionally need event duration, assessed affected area, independent damage assessment, and subsequent harvest outcomes. Store provenance per field, units, collection time and assessor; do not collapse mapped soil into measured soil.
 
-Ask Lovable to implement the database and access policies. Do not add migrations by hand. Keep personally identifying information out of evaluation exports.
+Implement and review database access policies before collecting real farm records. Keep personally identifying information out of evaluation exports.
 
 Begin with a training-set-only historical yield baseline for each supported crop/locality. Evaluate a seasonal water-balance/crop model against that baseline. AquaCrop is a candidate for water-related yield response, not a universal hazard model. A full-season implementation needs daily weather, soil storage/permeability, crop parameters and management inputs. Calibrate only on training farms/seasons; test on later seasons and farms never used for fitting. Evaluate each crop and hazard separately before expanding coverage.
 
@@ -44,4 +44,4 @@ A qualified local reviewer must define suitability rules, recovery decision cond
 - [FAO AquaCrop inputs](https://www.fao.org/aquacrop/overview/input-requirements/): weather, crop, soil and management requirements.
 - [FAO AquaCrop overview](https://www.fao.org/land-water/resources/tools/software/aquacrop/en): scope of water-related crop response modelling.
 - Existing source-specific findings and limitations: src/lib/crop-research.ts.
-- [Lovable AI](https://docs.lovable.dev/features/ai) and [chat models](https://docs.lovable.dev/features/ai-chat): managed credentials and model availability. Check workspace availability before deployment.
+- [Google Gemini API](https://ai.google.dev/gemini-api/docs/openai): direct API authentication and chat compatibility.

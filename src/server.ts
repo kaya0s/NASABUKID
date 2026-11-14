@@ -92,31 +92,45 @@ export default {
           return new Response("Loss assumptions exceed the supported range.", { status: 400 });
         }
         const key =
-          (env as { LOVABLE_API_KEY?: string })?.LOVABLE_API_KEY ?? process.env["LOVABLE_API_KEY"];
+          (env as { GEMINI_API_KEY?: string })?.GEMINI_API_KEY ?? process.env["GEMINI_API_KEY"];
         if (!key)
           return new Response(
-            "The advisor is not configured. Add LOVABLE_API_KEY through Lovable Secrets.",
+            "The advisor is not configured. Set GEMINI_API_KEY in the server environment.",
             { status: 503 },
           );
         let result: Response;
         try {
-          result = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            signal: AbortSignal.timeout(25_000),
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-            body: JSON.stringify({ model: "google/gemini-3.8-flash", messages, max_tokens: 1500 }),
-          });
-        } catch {
-          return new Response("The advisor could not connect in time. Please try again.", {
-            status: 504,
-          });
+          result = await fetch(
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            {
+              method: "POST",
+              signal: AbortSignal.timeout(60_000),
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+              body: JSON.stringify({
+                model: "gemini-3.8-flash",
+                messages,
+                reasoning_effort: "low",
+                max_tokens: 1500,
+              }),
+            },
+          );
+        } catch (error) {
+          const timedOut =
+            (error instanceof Error || error instanceof DOMException) &&
+            error.name === "TimeoutError";
+          return new Response(
+            timedOut
+              ? "The advisor took too long to respond. Please try again."
+              : "The advisor could not reach Google. Please try again shortly.",
+            { status: timedOut ? 504 : 502 },
+          );
         }
         if (!result.ok)
           return new Response(
-            result.status === 429
+            result.status === 429 || result.status === 503
               ? "The advisor is busy. Please try again shortly."
               : result.status === 402
-                ? "The advisor's AI credits are unavailable. Contact the project owner."
+                ? "The advisor’s provider billing is unavailable. Contact the project owner."
                 : "The advisor is unavailable right now.",
             { status: 502 },
           );
