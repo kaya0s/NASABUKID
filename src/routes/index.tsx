@@ -11,7 +11,7 @@ import {
   CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, CloudDrizzle, CloudSun,
   Compass, Droplets, FileText, FlaskConical, Flower2, HeartHandshake, ImagePlus, Leaf,
   MapPin, Menu, MessageCircle, Mountain, Plus, RotateCcw, Send, ShieldCheck, Sprout, Sun,
-  Thermometer, Upload, Waves, Wind, X,
+  Thermometer, Upload, Waves, Wheat, Wind, X,
 } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import floodCorn from "@/assets/sample-flooded-corn.jpg";
@@ -50,7 +50,7 @@ type ChatMessage = { role: "assistant" | "user"; text: string };
 const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; section: string; isCenter?: boolean }> = [
   { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
   { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
-  { id: "prevention", label: "Crop planning", icon: Plus, section: "WORKSPACE", isCenter: true },
+  { id: "prevention", label: "Crop planning", icon: Wheat, section: "WORKSPACE", isCenter: true },
   { id: "recovery", label: "Damage recovery", icon: HeartHandshake, section: "WORKSPACE" },
   { id: "evidence", label: "Evidence & sources", icon: FileText, section: "INSIGHTS" },
   { id: "chat", label: "Field advisor", icon: MessageCircle, section: "INSIGHTS" },
@@ -395,7 +395,7 @@ function OverviewPage({
       {/* Quick Actions Row */}
       <div className="agri-quick-actions">
         <Button size="lg" className="agri-btn-primary" onClick={onPrevention}>
-          <Sprout size={18} /> Plan My Crops
+          <Wheat size={18} /> Plan My Crops
         </Button>
         <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
           <MessageCircle size={18} /> Ask Advisor
