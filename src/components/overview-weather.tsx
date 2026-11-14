@@ -26,7 +26,7 @@ export function interpretWeatherCode(code: number): { label: string; icon: typeo
 
 export async function fetchCurrentWeather(location: Coordinates, signal?: AbortSignal): Promise<CurrentWeather> {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude.toFixed(4)}&longitude=${location.longitude.toFixed(4)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&timezone=auto`;
-  const res = await fetch(url, { signal });
+  const res = await fetch(url, { signal: signal ?? null });
   if (!res.ok) throw new Error("Could not load weather data.");
   const json = await res.json();
   const current = json.current;
@@ -51,7 +51,7 @@ export function OverviewWeatherWidget({
   onLocationFound?: (coords: Coordinates) => void;
 }) {
   const [detecting, setDetecting] = useState(false);
-  const isTestEnv = typeof process !== "undefined" && process.env.NODE_ENV === "test";
+  const isTestEnv = typeof process !== "undefined" && process.env["NODE_ENV"] === "test";
   const [loaded] = useState(!isTestEnv);
 
   const query = useQuery({
