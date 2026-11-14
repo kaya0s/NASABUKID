@@ -41,7 +41,12 @@ export type Leaflet = {
   polygon: (
     points: [number, number][],
     options: object,
-  ) => { addTo: (map: MapInstance) => { setLatLngs: (points: [number, number][]) => void } };
+  ) => {
+    addTo: (map: MapInstance) => {
+      setLatLngs: (points: [number, number][]) => void;
+      setStyle?: (options: object) => void;
+    };
+  };
   marker?: (point: [number, number] | LatLng, options?: object) => MarkerInstance;
   circleMarker?: (point: [number, number] | LatLng, options?: object) => MarkerInstance;
   circle?: (point: [number, number] | LatLng, options?: object) => CircleInstance;

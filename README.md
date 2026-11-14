@@ -68,3 +68,11 @@ Each option includes a short research rationale and expandable findings/referenc
 None of these references validates the full three-crop sequences for Bukidnon or calibrates the demo weights/ratings. The display explicitly says the ordering remains a demo comparison. Sweetpotato cards flag the need for drainage verification when reported drainage is not Good. This is evidence for discussing candidate crops and management, not proof of the best rotation or a new agronomic scoring model.
 
 Implementation details: [Changes](docs/CHANGES.md), [Methodology](docs/METHODOLOGY.md), [Evaluation protocol](docs/EVALUATION.md).
+
+## Simplified farmer workflow
+
+Start with **Set up my farm**, then choose crop planning or damage recovery. Recovery now follows three sections: describe damage, estimate gross revenue at risk, and review next steps. Photos, observations, weather, and score details are expandable. Event changes preserve entered damage fractions; recovery area is editable unless calculated from a drawn boundary, which can be updated through My farm.
+
+The overview no longer substitutes example weather when a provider is unavailable. Map values identify POWER separately from the SMAP/MODIS display layers; demo ratings are not NASA match percentages. Recent map weather is stored separately from the complete historical year explicitly applied to planning. Fertilizer prescriptions were removed from the main planning flow and advisor payload; they require local soil-test interpretation.
+
+AI-assisted coding was used in this revision. Review [Space Apps demonstration and defense](docs/SPACE_APPS_DEFENSE.md) for the demonstration sequence, scientific limits, and outstanding submission checks. Passing software tests does not validate agronomy or establish competition eligibility.

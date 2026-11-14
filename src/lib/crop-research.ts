@@ -68,3 +68,30 @@ export const ROTATION_RESEARCH: Record<
     sources: ["water", "residues"],
   },
 };
+
+// Evidence follows the actual next crop, not a legacy strategy identifier.
+export const NEXT_CROP_RESEARCH: Record<
+  string,
+  { rationale: string; sources: Array<keyof typeof CROP_RESEARCH> }
+> = {
+  Corn: {
+    rationale:
+      "FAO describes seasonal maize water needs. This does not establish suitability for this farm.",
+    sources: ["water"],
+  },
+  Sorghum: {
+    rationale:
+      "FAO discusses sorghum's drought sensitivity. Local varieties and planting dates still need review.",
+    sources: ["water"],
+  },
+  Mungbean: {
+    rationale:
+      "A Philippine corn–mungbean experiment supports discussing this crop break under its tested conditions.",
+    sources: ["mungbean", "residues"],
+  },
+  "Sweet potato": {
+    rationale:
+      "Waterlogging studies make drainage an essential check before considering sweetpotato.",
+    sources: ["waterlogging"],
+  },
+};

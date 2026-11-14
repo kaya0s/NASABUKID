@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePlace, parseSoil, soilRequestUrl } from "./farm-context";
+import { classifyFarmSignals, parsePlace, parseSoil, soilRequestUrl } from "./farm-context";
 const layer = (name: string, mean: number | null) => ({
   name,
   unit_measure: { d_factor: 10 },
@@ -57,7 +57,7 @@ describe("Public farm context", () => {
   });
 });
 
-import { terrainRequestUrl, parseTerrain } from "./farm-context";
+import { terrainRequestUrl, parseTerrain, classifyOverpassLandUse } from "./farm-context";
 it("samples centre and four neighbours and computes a terrain gradient without treating missing values as flat", () => {
   const url = new URL(terrainRequestUrl({ latitude: 8.3, longitude: 125 }));
   expect(url.searchParams.get("latitude")!.split(",")).toHaveLength(5);
@@ -66,4 +66,90 @@ it("samples centre and four neighbours and computes a terrain gradient without t
   expect(() => parseTerrain({ elevation: [100, null, 100, 100, 100] })).toThrow();
   expect(() => parseTerrain({ elevation: [100, -9999, 100, 100, 100] })).toThrow();
   expect(() => terrainRequestUrl({ latitude: 89, longitude: 125 })).toThrow();
+});
+
+describe("3-tier farm lot land-use classification", () => {
+  it("hard-blocks water, residential, commercial, and building features", () => {
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { natural: "water" } }] }),
+    ).toMatchObject({
+      tier: "hard_block",
+      message: "Non-arable area detected (urban structure or water body). Please select a farm plot.",
+    });
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { landuse: "residential" } }] }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { building: "yes" } }] }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { amenity: "school" } }] }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { leisure: "park" } }] }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { highway: "residential" } }] }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { natural: "wood" } }] }).tier,
+    ).toBe("hard_block");
+  });
+
+  it("allows farmland even when an adjacent road tag is also returned", () => {
+    expect(
+      classifyOverpassLandUse({
+        elements: [{ tags: { landuse: "farmland" } }, { tags: { highway: "secondary" } }],
+      }).tier,
+    ).toBe("pass");
+  });
+
+  it("instantly passes farmland, orchard, and plantation tags", () => {
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { landuse: "farmland" } }] }),
+    ).toMatchObject({
+      tier: "pass",
+      message: null,
+    });
+    expect(
+      classifyOverpassLandUse({ elements: [{ tags: { landuse: "orchard" } }] }).tier,
+    ).toBe("pass");
+  });
+
+  it("soft-confirms untagged rural land", () => {
+    expect(classifyOverpassLandUse({ elements: [] })).toMatchObject({
+      tier: "soft_confirm",
+      message: "Unmapped rural parcel — verify crop boundary before saving.",
+    });
+  });
+
+  it("blocks non-arable areas using elevation, SoilGrids, Photon, and MODIS NDVI", () => {
+    expect(
+      classifyFarmSignals({ elevationM: 0, soilAvailable: true, peakNdvi: 0.4 }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyFarmSignals({ elevationM: 320, soilAvailable: false, peakNdvi: 0.4 }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyFarmSignals({ elevationM: 320, soilAvailable: true, peakNdvi: 0.09 }).tier,
+    ).toBe("hard_block");
+    expect(
+      classifyFarmSignals({
+        elevationM: 320,
+        soilAvailable: true,
+        peakNdvi: 0.5,
+        photonOsmKey: "building",
+        photonOsmValue: "yes",
+      }).tier,
+    ).toBe("hard_block");
+  });
+
+  it("soft-confirms low NDVI fallow fields and passes vegetated farmland", () => {
+    expect(
+      classifyFarmSignals({ elevationM: 320, soilAvailable: true, peakNdvi: 0.19 }).tier,
+    ).toBe("soft_confirm");
+    expect(
+      classifyFarmSignals({ elevationM: 320, soilAvailable: true, peakNdvi: 0.58 }).tier,
+    ).toBe("pass");
+  });
 });

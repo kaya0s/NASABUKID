@@ -213,3 +213,85 @@ export async function fetchRecentNasaClimate(
     );
   }
 }
+
+export interface ModisNdviPoint {
+  date: string;
+  ndvi: number;
+}
+
+export interface ModisNdviSeries {
+  points: ModisNdviPoint[];
+  latestNdvi: number | null;
+  peakNdvi: number | null;
+  sourceUrl: string;
+}
+
+export function toModisDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const startOfYear = Date.UTC(year, 0, 1);
+  const currentDay = Date.UTC(year, date.getUTCMonth(), date.getUTCDate());
+  const dayOfYear = Math.floor((currentDay - startOfYear) / 86400000) + 1;
+  return `A${year}${String(dayOfYear).padStart(3, "0")}`;
+}
+
+export function modisNdviRequestUrl(location: Coordinates, startDate: Date, endDate: Date): string {
+  coordinatesSchema.parse(location);
+  const params = new URLSearchParams({
+    latitude: location.latitude.toFixed(5),
+    longitude: location.longitude.toFixed(5),
+    band: "250m_16_days_NDVI",
+    startDate: toModisDate(startDate),
+    endDate: toModisDate(endDate),
+    kmAboveBelow: "0",
+    kmLeftRight: "0",
+  });
+  return `https://modis.ornl.gov/rst/api/v1/MOD13Q1/subset?${params}`;
+}
+
+export function parseModisNdviSeries(payload: unknown): ModisNdviPoint[] {
+  const parsed = z
+    .object({
+      subset: z.array(
+        z.object({
+          calendar_date: z.string(),
+          data: z.array(z.number().finite()),
+        }),
+      ),
+    })
+    .safeParse(payload);
+
+  if (!parsed.success) return [];
+
+  const points: ModisNdviPoint[] = [];
+  for (const row of parsed.data.subset) {
+    const valid = row.data.filter((v) => v >= -2000 && v <= 10000);
+    if (!valid.length) continue;
+    const meanRaw = valid.reduce((sum, v) => sum + v, 0) / valid.length;
+    const ndvi = Number(Math.max(-0.2, Math.min(1, meanRaw * 0.0001)).toFixed(2));
+    points.push({ date: row.calendar_date, ndvi });
+  }
+  return points.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export async function fetchRecentModisNdvi(
+  location: Coordinates,
+  signal?: AbortSignal,
+): Promise<ModisNdviSeries | null> {
+  try {
+    const endDate = new Date(Date.now() - 16 * 86400000);
+    const startDate = new Date(endDate.getTime() - 180 * 86400000);
+    const url = modisNdviRequestUrl(location, startDate, endDate);
+    const timeout = AbortSignal.timeout(9000);
+    const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    const response = await fetch(url, { signal: combinedSignal });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as unknown;
+    const points = parseModisNdviSeries(payload);
+    if (!points.length) return null;
+    const latestNdvi = points[points.length - 1]!.ndvi;
+    const peakNdvi = Number(Math.max(...points.map((p) => p.ndvi)).toFixed(2));
+    return { points, latestNdvi, peakNdvi, sourceUrl: url };
+  } catch {
+    return null;
+  }
+}
