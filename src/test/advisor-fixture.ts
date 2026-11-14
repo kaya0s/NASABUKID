@@ -1,0 +1,42 @@
+import type { AdvisorRequest } from "../lib/advisor";
+export const fixture: AdvisorRequest = {
+  question: "Why is my loss this amount?",
+  history: [
+    { role: "user", content: "My corn flooded." },
+    { role: "assistant", content: "How long was it flooded?" },
+  ],
+  context: {
+    workflow: "recovery",
+    farm: {
+      place: "Unknown",
+      area: "4.2",
+      crop: "Corn",
+      previous: "Mungbean",
+      ph: "",
+      soil: "",
+      irrigation: "Unknown",
+      drainage: "Unknown",
+      planted: "",
+    },
+    locationConfirmed: false,
+    profileSource: "sample-or-saved-unverified",
+    scenario: "Typical",
+    rotation: "Corn → Mungbean → Sorghum",
+    recovery: {
+      hazard: "Flooding",
+      damageDate: "2026-10-29",
+      actualPlantingDate: "",
+      growthStage: "",
+      durationHours: null,
+      observations: "",
+      affectedFraction: 0.65,
+      yieldLossFraction: 0.35,
+      areaHectares: 4.2,
+      expectedYieldKgPerHectare: 6000,
+      pricePerKg: 18,
+      assumptionsSource: "sample",
+      photo: "uploaded-not-analyzed",
+    },
+    weather: null,
+  },
+};

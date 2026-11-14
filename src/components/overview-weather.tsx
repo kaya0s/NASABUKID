@@ -1,6 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Cloud, CloudDrizzle, CloudLightning, CloudRain, CloudSun, Droplets, LocateFixed, Sun, Wind, Bell } from "lucide-react";
+import {
+  Cloud,
+  CloudDrizzle,
+  CloudLightning,
+  CloudRain,
+  CloudSun,
+  Droplets,
+  LocateFixed,
+  Sun,
+  Wind,
+  Bell,
+} from "lucide-react";
 import type { Coordinates } from "@/lib/nasa-power";
 
 export type CurrentWeather = {
@@ -24,7 +35,10 @@ export function interpretWeatherCode(code: number): { label: string; icon: typeo
   return { label: "Cloudy", icon: Cloud };
 }
 
-export async function fetchCurrentWeather(location: Coordinates, signal?: AbortSignal): Promise<CurrentWeather> {
+export async function fetchCurrentWeather(
+  location: Coordinates,
+  signal?: AbortSignal,
+): Promise<CurrentWeather> {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude.toFixed(4)}&longitude=${location.longitude.toFixed(4)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&timezone=auto`;
   const res = await fetch(url, { signal: signal ?? null });
   if (!res.ok) throw new Error("Could not load weather data.");
@@ -93,7 +107,9 @@ export function OverviewWeatherWidget({
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(new Date()).replace(" at ", " | ");
+  })
+    .format(new Date())
+    .replace(" at ", " | ");
 
   return (
     <div className="agri-header-card">
@@ -146,15 +162,21 @@ export function OverviewWeatherWidget({
         <div className="agri-weather-stats-row">
           <div className="agri-stat-col">
             <span className="agri-stat-label">Humidity</span>
-            <strong className="agri-stat-val">{weather ? `${weather.relativeHumidity}%` : "80%"}</strong>
+            <strong className="agri-stat-val">
+              {weather ? `${weather.relativeHumidity}%` : "80%"}
+            </strong>
           </div>
           <div className="agri-stat-col">
             <span className="agri-stat-label">Precipitation</span>
-            <strong className="agri-stat-val">{weather ? `${weather.precipitation} mm` : "2 mm"}</strong>
+            <strong className="agri-stat-val">
+              {weather ? `${weather.precipitation} mm` : "2 mm"}
+            </strong>
           </div>
           <div className="agri-stat-col">
             <span className="agri-stat-label">Wind Speed</span>
-            <strong className="agri-stat-val">{weather ? `${weather.windSpeed} km/h` : "12 km/h"}</strong>
+            <strong className="agri-stat-val">
+              {weather ? `${weather.windSpeed} km/h` : "12 km/h"}
+            </strong>
           </div>
         </div>
       </div>

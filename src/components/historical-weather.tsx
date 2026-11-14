@@ -1,5 +1,5 @@
 import { MonthlyWeatherCharts } from "@/components/monthly-weather-charts";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -25,11 +25,13 @@ export function HistoricalWeatherPanel({
   location,
   eventDate,
   onUse,
+  onLoaded,
   monthlyCharts = false,
 }: {
   location: Coordinates;
   eventDate?: string;
   monthlyCharts?: boolean;
+  onLoaded?: (weather: HistoricalWeather | null) => void;
   onUse?: (weather: HistoricalWeather | null) => void;
 }) {
   const year = new Date().getUTCFullYear() - 1;
@@ -57,15 +59,16 @@ export function HistoricalWeatherPanel({
     refetchOnWindowFocus: false,
   });
   const data = validation ? undefined : query.data;
+  useEffect(() => {
+    onLoaded?.(data ?? null);
+  }, [data, onLoaded]);
   const summary = data ? summarizeWeather(data.days) : null;
   return (
     <section className="panel historical-panel">
       <div className="panel-top">
         <div>
           <span className="panel-eyebrow">WEATHER OBSERVATIONS</span>
-          <h2>
-            {eventDate ? "Weather Around Event Date" : "Historical Seasonal Weather"}
-          </h2>
+          <h2>{eventDate ? "Weather Around Event Date" : "Historical Seasonal Weather"}</h2>
         </div>
       </div>
       {monthlyCharts ? (
