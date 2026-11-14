@@ -615,3 +615,94 @@ export async function checkFarmLandUse(
     photonOsmValue,
   });
 }
+
+export function soilPhMapUrl(location: Coordinates) {
+  coordinatesSchema.parse(location);
+  const layer = `phh2o_${SOIL_DEPTH}_mean`;
+  return `https://maps.isric.org/mapserv?${new URLSearchParams({
+    map: "/map/phh2o.map",
+    SERVICE: "WMS",
+    VERSION: "1.1.1",
+    REQUEST: "GetFeatureInfo",
+    LAYERS: layer,
+    QUERY_LAYERS: layer,
+    STYLES: "",
+    SRS: "EPSG:4326",
+    BBOX: [
+      location.longitude - 0.01,
+      location.latitude - 0.01,
+      location.longitude + 0.01,
+      location.latitude + 0.01,
+    ].join(","),
+    WIDTH: "101",
+    HEIGHT: "101",
+    X: "50",
+    Y: "50",
+    FORMAT: "image/png",
+    INFO_FORMAT: "application/geo+json",
+  })}`;
+}
+export function parseSoilPhMap(payload: unknown) {
+  const data = z
+    .object({
+      type: z.literal("FeatureCollection"),
+      features: z.array(
+        z.object({
+          id: z.string(),
+          properties: z.object({ pixel_value: z.number().finite().nullable(), unit: z.string() }),
+        }),
+      ),
+    })
+    .parse(payload);
+  const feature = data.features.find((row) => row.id === `phh2o_${SOIL_DEPTH}_mean`);
+  if (
+    !feature ||
+    feature.properties.unit !== "pH*10" ||
+    feature.properties.pixel_value === null ||
+    feature.properties.pixel_value < 0 ||
+    feature.properties.pixel_value > 140
+  ) {
+    throw new Error("No usable mapped soil pH is available at this location.");
+  }
+  return feature.properties.pixel_value / 10;
+}
+export async function fetchSoilContext(location: Coordinates, signal: AbortSignal) {
+  let partial: ReturnType<typeof parseSoil> | null = null;
+  let partialSource: { sourceUrl: string; retrievedAt: string } | null = null;
+  try {
+    // The REST service is paused/unreliable; bound its wait before querying the official raster service.
+    const result = await fetchPublicContext(
+      soilRequestUrl(location),
+      AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+    );
+    partial = parseSoil(result.payload);
+    partialSource = { sourceUrl: result.sourceUrl, retrievedAt: result.retrievedAt };
+    if (partial.ph !== null) return { ...partial, ...partialSource };
+  } catch (error) {
+    if (signal.aborted) throw error;
+  }
+  const sourceUrl = soilPhMapUrl(location);
+  try {
+    const response = await fetch(sourceUrl, {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+    });
+    if (!response.ok) throw new Error(`Soil map service is unavailable (${response.status}).`);
+    const ph = parseSoilPhMap(await response.json());
+    return {
+      ph,
+      sand: partial?.sand ?? null,
+      silt: partial?.silt ?? null,
+      clay: partial?.clay ?? null,
+      texture: partial?.texture ?? null,
+      phRange: null,
+      sourceUrl,
+      retrievedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    if (signal.aborted) throw error;
+    if (partial && partialSource) return { ...partial, ...partialSource };
+    throw new Error(
+      "Automatic soil lookup is unavailable. Keep pH unknown or enter a local soil-test value.",
+    );
+  }
+}

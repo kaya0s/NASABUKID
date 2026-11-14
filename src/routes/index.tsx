@@ -1,11 +1,11 @@
-import { RECOVERY_STEPS, type AdvisorRequest } from "@/lib/advisor";
-import { RotationResearch } from "@/components/rotation-research";
-import { RotationEvidence } from "@/components/rotation-evidence";
+import { AdvisorChat, type AdvisorMessage } from "@/components/advisor-chat";
+import { NextCropPlanner, type PlannerResult } from "@/components/next-crop-planner";
+import { RECOVERY_STEPS, type AdvisorRequest, type AdvisorLanguage } from "@/lib/advisor";
 import { ROTATION_RESEARCH } from "@/lib/crop-research";
 import { ApiSources } from "@/components/api-sources";
 import { FarmPublicData, type ContextFields } from "@/components/farm-public-data";
 import { measureFarmBoundary } from "@/lib/farm-boundary";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Activity,
@@ -57,13 +57,6 @@ import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import floodCorn from "@/assets/sample-flooded-corn.jpg";
 import heroFarmland from "@/assets/hero-farmland.jpg";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,18 +67,13 @@ import { OverviewWeatherWidget } from "@/components/overview-weather";
 import {
   coordinatesSchema,
   fetchRecentNasaClimate,
-  monthlyWeather,
   type Coordinates,
   type HistoricalWeather,
 } from "@/lib/nasa-power";
 import {
-  buildRotationStrategies,
-  buildSoilAndAgronomyAdvisory,
-  planningReviewFlags,
+  nextCropInputKey,
   calculateEstimatedLoss,
   type ClimateScenario,
-  type RotationStrategy,
-  rotationsForScenario,
   SAMPLE_CORN_PRICE_PER_KG,
   SAMPLE_YIELD_KG_PER_HA,
 } from "@/lib/fieldshift-demo";
@@ -122,8 +110,7 @@ type Page =
   | "fullmap"
   | "prevention"
   | "recovery"
-  | "evidence"
-  | "chat";
+  | "evidence";
 type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
 type Farm = {
   place: string;
@@ -135,11 +122,6 @@ type Farm = {
   irrigation: string;
   drainage: string;
   planted: string;
-};
-type ChatMessage = {
-  role: "assistant" | "user";
-  text: string;
-  error?: boolean;
 };
 const NAV: Array<{
   id: Page;
@@ -156,12 +138,6 @@ const NAV: Array<{
       icon: FileText,
       section: "INSIGHTS",
     },
-    {
-      id: "chat",
-      label: "Field advisor",
-      icon: MessageCircle,
-      section: "INSIGHTS",
-    },
   ];
 const SCENARIOS: ClimateScenario[] = ["Typical", "El Niño-like", "Wet"];
 const CROP_OPTIONS = [
@@ -175,25 +151,6 @@ const CROP_OPTIONS = [
   "Cassava",
 ] as const;
 const PREVIOUS_CROP_OPTIONS = [...CROP_OPTIONS, "Fallow"] as const;
-const SUGGESTED_QUESTIONS = [
-  "Why plant a legume after corn?",
-  "What changes in a dry season?",
-  "How was my loss estimate calculated?",
-];
-const SUGGESTIONS_BY_WORKFLOW = {
-  prevention: [
-    "Why plant a legume after corn?",
-    "What changes in a dry season?",
-    "How do crop rotations protect soil?",
-    "Which crops handle wet conditions best?",
-  ],
-  recovery: [
-    "How was my loss estimate calculated?",
-    "What should I do right after floodwaters recede?",
-    "Can surviving corn still produce grain?",
-    "What fast-growing replanting options work?",
-  ],
-};
 const SEED_FARM: Farm = {
   place: "Location not identified",
   area: "4.2",
@@ -271,6 +228,7 @@ function useIsMobile() {
 
 function FieldShift() {
   const isMobile = useIsMobile();
+  const [plannerResult, setPlannerResult] = useState<PlannerResult | null>(null);
   const [advisorWorkflow, setAdvisorWorkflow] = useState<"recovery" | "prevention">("prevention");
   const [mapAdvisoryMode, setMapAdvisoryMode] = useState<"rotation" | "recovery">("rotation");
   const [recoveryCardStep, setRecoveryCardStep] = useState<1 | 2>(1);
@@ -309,16 +267,11 @@ function FieldShift() {
     name: "Sample · waterlogged corn",
     sample: true,
   });
-  const [selectedRotation, setSelectedRotation] = useState("legume");
-  const [evidenceRotation, setEvidenceRotation] = useState("legume");
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [advisorLanguage, setAdvisorLanguage] = useState<AdvisorLanguage>("auto");
+  const [advisorOpen, setAdvisorOpen] = useState(false);
+  const explainedPlanKey = useRef<string | null>(null);
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      text: "Hi there. I’m your NASABUKID demo advisor. I can walk through this mock data plan, farm profile, or recovery estimate. What would you like to explore?",
-    },
-  ]);
+  const [chatMessages, setChatMessages] = useState<AdvisorMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -412,29 +365,7 @@ function FieldShift() {
       setEventWeather(null);
     }
   }
-  const monthlyRainfall = historical
-    ? Array.from({ length: 12 }, (_, month) =>
-      historical.days
-        .filter((day) => Number(day.date.slice(5, 7)) === month + 1)
-        .reduce((sum, day) => sum + (day.rainfall ?? 0), 0),
-    )
-    : undefined;
-
-  const rotations = buildRotationStrategies(scenario, {
-    ph: farm.ph.trim() ? Number(farm.ph) : NaN,
-    drainage: farm.drainage,
-    irrigation: farm.irrigation,
-    planted: farm.planted,
-    crop: farm.crop,
-    previous: farm.previous,
-    slopePercent: terrain?.slopePercent ?? null,
-    soil: farm.soil,
-    ...(monthlyRainfall ? { monthlyRainfall } : {}),
-  });
-  const activeRotation =
-    rotations.find((rotation) => rotation.id === selectedRotation) ?? rotations[0]!;
-  const evidenceItem =
-    rotations.find((rotation) => rotation.id === evidenceRotation) ?? rotations[0]!;
+  const currentPlannerResult = locationConfirmed && plannerResult?.inputKey === nextCropInputKey(location, farm, terrain) ? plannerResult.result : null;
   const validLossInputs =
     [farm.area, expectedYield, price].every(
       (value) => value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0,
@@ -455,13 +386,12 @@ function FieldShift() {
   const HIDDEN_PAGES: ReadonlySet<Page> = new Set([
     "overview",
     "farm",
-    "prevention",
     "recovery",
     "evidence",
-    "chat",
   ]);
 
   function goTo(next: Page) {
+    if (next === "landing") setAdvisorOpen(false);
     const resolved: Page = HIDDEN_PAGES.has(next) ? "fullmap" : next;
     if (resolved === "recovery" || resolved === "prevention") setAdvisorWorkflow(resolved);
     setPage(resolved);
@@ -529,31 +459,36 @@ function FieldShift() {
     setHazard(next);
   }
 
-  async function sendQuestion(question = chatInput) {
+  async function sendQuestion(question = chatInput, workflow = advisorWorkflow, language = advisorLanguage) {
     const text = question.trim();
     if (!text || chatBusy) return;
+    const previousMessages = chatMessages.filter((message) => !message.error);
+    if (chatMessages.at(-1)?.error && previousMessages.at(-1)?.role === "user" && previousMessages.at(-1)?.text === text) previousMessages.pop();
     setChatBusy(true);
-    setChatMessages((messages) => [...messages, { role: "user", text }]);
+    setChatMessages([...previousMessages, { role: "user", text }]);
     setChatInput("");
     try {
       const numberOrNull = (value: string) =>
         value.trim() && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
-      const weather = advisorWorkflow === "recovery" ? eventWeather : historical;
+      const weather = workflow === "recovery" ? eventWeather : null;
+      const currentPlan = currentPlannerResult && plannerResult
+        ? { ...currentPlannerResult, climateMonths: plannerResult.climateMonths }
+        : null;
       const payload: AdvisorRequest = {
+        language,
         question: text,
-        history: chatMessages
-          .filter((message) => !message.error)
-          .slice(1)
+        history: previousMessages
           .slice(-10)
           .map((message) => ({ role: message.role, content: message.text })),
         context: {
-          workflow: advisorWorkflow,
+          workflow,
           farm,
           locationConfirmed,
           profileSource: profileEdited ? "edited-unverified" : "sample-or-saved-unverified",
           scenario,
-          rotation: activeRotation.name,
-          recovery: {
+          rotation: currentPlan?.suggestions[0]?.crop ?? "No current next-crop suggestion",
+          nextCropPlan: currentPlan,
+          recovery: workflow === "recovery" ? {
             hazard,
             damageDate,
             actualPlantingDate,
@@ -567,7 +502,7 @@ function FieldShift() {
             pricePerKg: numberOrNull(price),
             assumptionsSource: assumptionsEdited ? "edited-unverified" : "sample",
             photo: photo.sample ? "sample-not-analyzed" : "uploaded-not-analyzed",
-          },
+          } : undefined,
           weather: weather
             ? {
               start: weather.start,
@@ -580,7 +515,7 @@ function FieldShift() {
                 (day) => day.rainfall === null || day.temperature === null,
               ).length,
               purpose:
-                advisorWorkflow === "recovery"
+                workflow === "recovery"
                   ? "historical-event-context-not-damage-proof"
                   : "historical-planning-context-not-event-evidence",
             }
@@ -591,47 +526,7 @@ function FieldShift() {
               slopePercent: terrain.slopePercent,
             }
             : undefined,
-          rotationDetails: {
-            strategyLabel: activeRotation.strategyLabel.slice(0, 280),
-            nextCrop: activeRotation.nextCrop.slice(0, 280),
-            layFallowPeriod: activeRotation.layFallowPeriod.slice(0, 280),
-            pros: activeRotation.pros.slice(0, 6).map((item) => item.slice(0, 280)),
-            cons: activeRotation.cons.slice(0, 6).map((item) => item.slice(0, 280)),
-            satelliteWhy: activeRotation.satelliteWhy.slice(0, 10).map((item) => item.slice(0, 280)),
-            evidenceGaps: activeRotation.evidenceGaps.slice(0, 10).map((item) => item.slice(0, 280)),
-          },
-          agronomyAdvisory: (() => {
-            const monthly = historical ? monthlyWeather(historical.days) : null;
-            const adv = buildSoilAndAgronomyAdvisory({
-              nextCrop: activeRotation.nextCrop,
-              previousCrop: farm.previous,
-              ph: farm.ph.trim() && Number.isFinite(Number(farm.ph)) ? Number(farm.ph) : null,
-              soilTexture: farm.soil,
-              drainage: farm.drainage,
-              irrigation: farm.irrigation,
-              slopePercent: terrain?.slopePercent ?? null,
-              elevation: terrain?.elevation ?? null,
-              ...(monthly
-                ? {
-                  monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
-                  monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
-                }
-                : {}),
-            });
-            return {
-              suitabilityStatus: adv.suitability.status.slice(0, 280),
-              phLabel: adv.soilProfile.phLabel.slice(0, 280),
-              mineralsNeeded: adv.soilProfile.mineralsNeeded.slice(0, 6).map((item) => item.slice(0, 280)),
-              recommendedFertilizers: adv.soilProfile.recommendedFertilizers
-                .slice(0, 6)
-                .map((item) => item.slice(0, 280)),
-              avoidFertilizers: adv.soilProfile.avoidFertilizers
-                .slice(0, 6)
-                .map((item) => item.slice(0, 280)),
-              bestPlantingWindow: adv.climateTiming.bestPlantingWindow.slice(0, 280),
-              prominentPestClimate: adv.climateTiming.prominentPestClimate.slice(0, 280),
-            };
-          })(),
+
         },
       };
       const response = await fetch("/api/advisor", {
@@ -664,6 +559,23 @@ function FieldShift() {
     }
   }
 
+  function changeAdvisorLanguage(language: AdvisorLanguage) {
+    setAdvisorLanguage(language);
+    if (language === "bisaya" && !chatBusy && chatMessages.some((message) => message.role === "assistant" && !message.error)) {
+      void sendQuestion("Ipasabot pag-usab sa Bisaya (Cebuano) ang imong katapusang tubag. Mubo ug yano lang.", advisorWorkflow, language);
+    }
+  }
+
+  function askAboutResult() {
+    setAdvisorWorkflow("prevention");
+    setAdvisorOpen(true);
+    const key = plannerResult?.inputKey;
+    if (currentPlannerResult && key && (explainedPlanKey.current !== key || chatMessages.at(-1)?.error) && !chatBusy) {
+      explainedPlanKey.current = key;
+      void sendQuestion("Explain this next-crop result briefly: why this crop for my planting date, the relevant weather or soil evidence, and the most important check before planting.", "prevention");
+    }
+  }
+
   const pageTitle: Record<Page, string> = {
     landing: "Welcome to NASABUKID",
     overview: "Overview",
@@ -672,7 +584,6 @@ function FieldShift() {
     prevention: "Crop planning",
     recovery: "Damage recovery",
     evidence: "Evidence & scoring",
-    chat: "Field advisor",
   };
 
   const sharedRecoveryProps = {
@@ -720,7 +631,7 @@ function FieldShift() {
         goTo("prevention");
       }
     },
-    onChat: () => goTo("chat"),
+    onChat: () => setAdvisorOpen(true),
   };
 
   const recoveryContent = (
@@ -791,6 +702,26 @@ function FieldShift() {
     />
   );
 
+  const advisorContent = (
+<AdvisorChat
+        open={advisorOpen}
+        onOpenChange={setAdvisorOpen}
+        messages={chatMessages}
+        busy={chatBusy}
+        input={chatInput}
+        onInputChange={setChatInput}
+        onSend={sendQuestion}
+        language={advisorLanguage}
+        onLanguageChange={changeAdvisorLanguage}
+        workflow={advisorWorkflow}
+        context={advisorWorkflow === "recovery"
+          ? `${farm.crop} · ${hazard} · ${lossLabel} estimated revenue at risk`
+          : currentPlannerResult?.suggestions[0]
+            ? `${currentPlannerResult.suggestions[0].crop} · Planned planting ${currentPlannerResult.planted}`
+            : "Your current field · No next-crop suggestion applied yet"}
+      />
+  );
+
   if (page === "landing") {
     return (
       <LandingPage
@@ -816,6 +747,11 @@ function FieldShift() {
             areaLabel={farm.area}
             farm={farm}
             onUpdateFarm={updateFarm}
+            locationConfirmed={locationConfirmed}
+            onPlannerResult={setPlannerResult}
+            advisorOpen={advisorOpen}
+            advisorContent={advisorContent}
+            onAskAdvisor={askAboutResult}
             onBrandClick={() => goTo("landing")}
             advisoryMode={mapAdvisoryMode}
             onAdvisoryModeChange={(mode) => {
@@ -876,7 +812,7 @@ function FieldShift() {
                 </span>
               </button>
             </div>
-            {page !== "overview" && page !== "chat" && (
+            {page !== "overview" && (
               <div className="page-intro">
                 <div>
                   <span className="eyebrow">
@@ -907,7 +843,7 @@ function FieldShift() {
                 boundary={boundary}
                 location={location}
                 scenario={scenario}
-                rotationName={activeRotation.name}
+                rotationName={plannerResult?.inputKey === nextCropInputKey(location, farm, terrain) ? plannerResult.result.suggestions[0]?.crop ?? "No crop cleared screening" : "Plan your next crop"}
                 hazard={hazard}
                 onLocationFound={(coords) => {
                   updateLocation(coords);
@@ -916,7 +852,7 @@ function FieldShift() {
                 onFullMap={() => goTo("fullmap")}
                 onRecover={() => goTo("recovery")}
                 onPrevention={() => goTo("prevention")}
-                onChat={() => goTo("chat")}
+                onChat={() => setAdvisorOpen(true)}
               />
             )}
             {page === "farm" && (
@@ -930,84 +866,10 @@ function FieldShift() {
                 onContinue={() => goTo("prevention")}
               />
             )}
-            {page === "prevention" && (
-              <>
-                <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
-                {historical && (
-                  <div className="note-strip">
-                    <ShieldCheck size={16} />
-                    <span>
-                      Demo water context: actual NASA rainfall from {historical.start} to{" "}
-                      {historical.end}, using your planting month. Other ratings and thresholds remain
-                      illustrative. The charts above show the selected NASA year.
-                    </span>
-                    <button onClick={() => setHistorical(null)}>Clear historical context</button>
-                  </div>
-                )}
-                <section className="panel">
-                  <h2>Review before choosing a crop</h2>
-                  <p>
-                    These are demo comparisons, not validated suitability decisions or yield
-                    forecasts. Income scores do not use production costs. Review every crop across its
-                    full growing season.
-                  </p>
-                  <ul>
-                    {planningReviewFlags(farm).map((flag) => (
-                      <li key={flag}>{flag}</li>
-                    ))}
-                  </ul>
-                </section>
-                <PreventionPage
-                  farm={farm}
-                  setFarm={setFarm}
-                  cropOptions={CROP_OPTIONS}
-                  previousCropOptions={PREVIOUS_CROP_OPTIONS}
-                  terrain={terrain}
-                  historical={historical}
-                  scenario={scenario}
-                  setScenario={(next) => {
-                    setScenario(next);
-                    setHistorical(null);
-                  }}
-                  rotations={rotations}
-                  selected={selectedRotation}
-                  setSelected={setSelectedRotation}
-                  onEvidence={(id) => {
-                    setEvidenceRotation(id);
-                    setEvidenceOpen(true);
-                  }}
-                  onChat={() => goTo("chat")}
-                  onEvidencePage={() => goTo("evidence")}
-                />
-              </>
-            )}
+            {page === "prevention" && <><div hidden={advisorOpen}><NextCropPlanner location={location} locationConfirmed={locationConfirmed} farm={farm} onUpdate={updateFarm} terrain={terrain} onResult={setPlannerResult} onAskAdvisor={askAboutResult} /></div>{advisorContent}</>}
             {page === "recovery" && recoveryContent}
-            {page === "evidence" && (
-              <EvidencePage
-                rotations={rotations}
-                scenario={scenario}
-                selected={evidenceRotation}
-                setSelected={setEvidenceRotation}
-                onChat={() => goTo("chat")}
-              />
-            )}
-            {page === "chat" && (
-              <ChatPage
-                farm={farm}
-                messages={chatMessages}
-                busy={chatBusy}
-                input={chatInput}
-                setInput={setChatInput}
-                onSend={sendQuestion}
-                onSuggestion={sendQuestion}
-                scenario={scenario}
-                rotation={activeRotation.name}
-                hazard={hazard}
-                loss={lossLabel}
-                advisorWorkflow={advisorWorkflow}
-                setAdvisorWorkflow={setAdvisorWorkflow}
-              />
-            )}
+            {page === "evidence" && <section className="panel"><h2>Next-crop sources</h2><p>Open your next-crop result for the exact NASA history, crop requirements, conditions and crops withheld. Suggestions compare historical patterns and global reference ranges; they are not forecasts or validated local prescriptions.</p><Button onClick={() => goTo("prevention")}>Open crop planner</Button></section>}
+
 
             {SHOW_API_SOURCES && <ApiSources />}
             <footer className="page-footer">
@@ -1017,7 +879,7 @@ function FieldShift() {
               {SHOW_FOOTER_NASA_INFO && (
                 <span>
                   NASABUKID <span className="footer-divider">·</span> NASA Space Apps demo{" "}
-                  <span className="footer-divider">·</span> Historical NASA access · Demo scores ·
+                  <span className="footer-divider">·</span> Historical NASA access · Crop screening ·
                   Gemini advisor
                 </span>
               )}
@@ -1069,44 +931,8 @@ function FieldShift() {
         )}
       </main>
 
-      <Dialog open={evidenceOpen} onOpenChange={setEvidenceOpen}>
-        <DialogContent className="evidence-dialog">
-          <DialogHeader>
-            <span className="eyebrow">
-              SCORECARD <span className="eyebrow-dot" /> DEMO ESTIMATE
-            </span>
-            <DialogTitle>{evidenceItem?.name ?? "Rotation details"}</DialogTitle>
-            <DialogDescription>
-              Illustrative score and evidence notes. These are planning examples—not verified field
-              results.
-            </DialogDescription>
-          </DialogHeader>
-          {evidenceItem && (
-            <>
-              <div className="modal-total">
-                <span>{evidenceItem.total}</span>
-                <span> / 100 weighted score</span>
-                <span className="rank-pill">
-                  {rotations.findIndex((entry) => entry.id === evidenceItem.id) === 0
-                    ? "TOP SAMPLE MATCH"
-                    : "ALTERNATIVE"}
-                </span>
-              </div>
-              <ScoreBreakdown scores={evidenceItem.scores} />
-              <p className="modal-note">{evidenceItem.note}</p>
-              <Button
-                className="w-full"
-                onClick={() => {
-                  setEvidenceOpen(false);
-                  goTo("chat");
-                }}
-              >
-                Ask the field advisor <ArrowRight size={16} />
-              </Button>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+
+
     </div>
   );
 }
@@ -1329,7 +1155,7 @@ function OverviewPage({
               </div>
               <h3 className="agri-card-title">Compare next-season rotations</h3>
               <p className="agri-card-copy">
-                Five demo rotations scored on water, soil, income, and resilience.
+                Choose your planting date and compare next crops with historical weather and field conditions.
               </p>
               <div className="agri-card-foot">
                 <span className="agri-card-status">
@@ -1583,366 +1409,6 @@ function FarmPage({
         </div>
       </aside>
     </div>
-  );
-}
-
-function PreventionPage({
-  farm,
-  setFarm,
-  cropOptions,
-  previousCropOptions,
-  terrain,
-  historical,
-  scenario,
-  setScenario,
-  rotations,
-  selected,
-  setSelected,
-  onEvidence,
-  onChat,
-  onEvidencePage,
-}: {
-  farm: Farm;
-  setFarm: React.Dispatch<React.SetStateAction<Farm>>;
-  cropOptions: readonly string[];
-  previousCropOptions: readonly string[];
-  terrain: { elevation: number | null; slopePercent: number | null } | null;
-  historical: HistoricalWeather | null;
-  scenario: ClimateScenario;
-  setScenario: (scenario: ClimateScenario) => void;
-  rotations: RotationStrategy[];
-  selected: string;
-  setSelected: (id: string) => void;
-  onEvidence: (id: string) => void;
-  onChat: () => void;
-  onEvidencePage: () => void;
-}) {
-  const activeStrategy = rotations.find((item) => item.id === selected) ?? rotations[0]!;
-  const monthly = historical ? monthlyWeather(historical.days) : null;
-  const advisory = buildSoilAndAgronomyAdvisory({
-    nextCrop: activeStrategy.nextCrop,
-    previousCrop: farm.previous,
-    ph: farm.ph.trim() && Number.isFinite(Number(farm.ph)) ? Number(farm.ph) : null,
-    soilTexture: farm.soil,
-    drainage: farm.drainage,
-    irrigation: farm.irrigation,
-    slopePercent: terrain?.slopePercent ?? null,
-    elevation: terrain?.elevation ?? null,
-    ...(monthly
-      ? {
-        monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
-        monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
-      }
-      : {}),
-  });
-
-  return (
-    <>
-      <section className="panel crop-history-bar">
-        <div className="crop-history-copy">
-          <span className="eyebrow">CROP HISTORY &amp; NEXT-CROP PREDICTOR</span>
-          <h3>Compare your current rotation against two alternatives</h3>
-          <p>
-            Adjust your previous and current crop below. Predictions combine NASA POWER rainfall,
-            SoilGrids pH, and terrain slope with transparent trade-offs and information gaps.
-          </p>
-        </div>
-        <div className="crop-history-fields">
-          <label>
-            Previous crop
-            <select
-              value={farm.previous}
-              onChange={(e) => setFarm((current) => ({ ...current, previous: e.target.value }))}
-            >
-              {previousCropOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Current crop
-            <select
-              value={farm.crop}
-              onChange={(e) => setFarm((current) => ({ ...current, crop: e.target.value }))}
-            >
-              {cropOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Planned next planting
-            <input
-              type="date"
-              value={farm.planted}
-              onChange={(e) => setFarm((current) => ({ ...current, planted: e.target.value }))}
-            />
-          </label>
-        </div>
-      </section>
-      <div className="scenario-toolbar">
-        <div className="scenario-copy">
-          <span className="scenario-indicator">
-            <Activity size={15} />
-          </span>
-          <div>
-            <strong>Explore demo scoring assumptions.</strong>
-            <span>
-              NASA charts above use actual records; these scenarios apply only to demo scores.
-            </span>
-          </div>
-        </div>
-        <div className="scenario-tabs" role="tablist" aria-label="Climate scenarios">
-          {SCENARIOS.map((value) => (
-            <button
-              key={value}
-              role="tab"
-              aria-selected={scenario === value}
-              className={scenario === value ? "scenario-active" : ""}
-              onClick={() => setScenario(value)}
-            >
-              {value === "Typical" ? (
-                <CloudSun size={14} />
-              ) : value === "El Niño-like" ? (
-                <Sun size={14} />
-              ) : (
-                <CloudDrizzle size={14} />
-              )}
-              {value}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="scenario-footnote">
-        <span>DEMO SCORING ASSUMPTIONS ONLY</span>
-        <span>
-          These tabs adjust sample ratings. They do not change NASA observations or classify
-          historical ENSO.
-        </span>
-        <span>NOT A FORECAST</span>
-      </div>
-      <section className="rotation-section">
-        <div className="section-title-row">
-          <div>
-            <span className="eyebrow">THREE WAYS TO ROTATE</span>
-            <h2>A season plan worth considering.</h2>
-            <p>
-              Published research explains why each option is worth considering. The order still
-              comes from demo scores, not a validated comparison of these sequences.
-            </p>
-          </div>
-          <Button variant="outline" onClick={onEvidencePage}>
-            <FileText size={15} /> All scoring evidence
-          </Button>
-        </div>
-        <div className="rotation-grid">
-          {rotations.map((rotation, index) => (
-            <article
-              key={rotation.id}
-              className={`rotation-card ${selected === rotation.id ? "rotation-selected" : ""}`}
-            >
-              <div className="rotation-card-top">
-                <span className="rotation-rank">
-                  <span>{String(index + 1).padStart(2, "0")}</span> {rotation.strategyLabel}
-                </span>
-                <button
-                  className={`rotation-select ${selected === rotation.id ? "rotation-select-on" : ""}`}
-                  aria-label={`${selected === rotation.id ? "Selected" : "Select"}: ${rotation.name}`}
-                  onClick={() => setSelected(rotation.id)}
-                >
-                  {selected === rotation.id ? <Check size={14} /> : <span />}
-                </button>
-              </div>
-              <div className="rotation-crop-media">
-                <img
-                  src={rotation.nextCropImage}
-                  alt={`${rotation.nextCrop} crop`}
-                  className="rotation-crop-img"
-                  loading="lazy"
-                />
-                <span className="rotation-next-badge">Next crop: {rotation.nextCrop}</span>
-              </div>
-              <h3>{rotation.name}</h3>
-              <p className="rotation-note">{rotation.note}</p>
-              <div className="rotation-score">
-                <span className="score-number">
-                  {rotation.total}
-                  <small> / 100</small>
-                </span>
-                <ScoreRing score={rotation.total} />
-                <div className="rotation-rank-caption">
-                  {rotation.isCurrentRotation
-                    ? "CURRENT BASELINE"
-                    : index === 0
-                      ? "HIGHEST SAMPLE SCORE"
-                      : "ALTERNATIVE ROTATION"}
-                </div>
-              </div>
-              <ScoreBreakdown scores={rotation.scores} />
-              <div className="rotation-tradeoffs">
-                <div className="tradeoff-col tradeoff-pros">
-                  <strong>Pros</strong>
-                  <ul>
-                    {rotation.pros.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="tradeoff-col tradeoff-cons">
-                  <strong>Cons &amp; risks</strong>
-                  <ul>
-                    {rotation.cons.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              <div className="rotation-fallow-note">
-                <strong>Lay fallow / rest period:</strong> {rotation.layFallowPeriod}
-              </div>
-              <details className="rotation-pests">
-                <summary>
-                  Possible pests &amp; diseases ({rotation.pestsAndDiseases.length})
-                </summary>
-                <div className="pest-list">
-                  {rotation.pestsAndDiseases.map((pest) => (
-                    <div key={pest.name} className="pest-item">
-                      <strong>{pest.name}</strong>
-                      <span>
-                        <b>Risk window:</b> {pest.riskWindow}
-                      </span>
-                      <span>
-                        <b>Mitigation:</b> {pest.mitigation}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-              <details className="rotation-why-gaps">
-                <summary>Why this rotation (satellite evidence &amp; gaps)</summary>
-                <div className="why-gaps-body">
-                  <strong>Satellite &amp; field signals</strong>
-                  <ul>
-                    {rotation.satelliteWhy.map((reason) => (
-                      <li key={reason}>{reason}</li>
-                    ))}
-                  </ul>
-                  <strong>Information gaps &amp; local review</strong>
-                  <ul>
-                    {rotation.evidenceGaps.map((gap) => (
-                      <li key={gap}>{gap}</li>
-                    ))}
-                  </ul>
-                </div>
-              </details>
-              <RotationResearch rotationId={rotation.id} drainage={farm.drainage} />
-              <RotationEvidence rotation={rotation} farm={farm} historical={historical} />
-              <div className="rotation-actions">
-                <Button variant="outline" size="sm" onClick={() => onEvidence(rotation.id)}>
-                  <FileText size={14} /> View evidence
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onChat}>
-                  <MessageCircle size={14} /> Ask the advisor
-                </Button>
-              </div>
-            </article>
-          ))}
-        </div>
-        <div className="scoring-note">
-          <ShieldCheck size={16} />
-          <span>
-            <strong>Transparent sample scoring.</strong> Weights are water 30%, soil 30%, income
-            25%, climate resilience 15%. The displayed total is calculated from these weights and
-            scenario-adjusted demo scores.
-          </span>
-        </div>
-      </section>
-      <section className="panel agronomy-advisory-panel">
-        <div className="section-title-row">
-          <div>
-            <span className="eyebrow">SOIL, FERTILIZER TIMING &amp; SUITABILITY</span>
-            <h2>Field &amp; crop guidance for {activeStrategy.nextCrop}</h2>
-            <p>
-              Illustrative screening based on SoilGrids pH, terrain slope, and NASA POWER rainfall
-              patterns. Confirm with a local soil test and agricultural technician.
-            </p>
-          </div>
-          <span
-            className={`suitability-pill suitability-${advisory.suitability.status.toLowerCase().replace(/[^a-z]+/g, "-")}`}
-          >
-            {advisory.suitability.status}
-          </span>
-        </div>
-
-        <div className="advisory-grid">
-          <div className="advisory-card">
-            <h3>Planting suitability &amp; terrain</h3>
-            <p className="advisory-summary">{advisory.suitability.summary}</p>
-            <ul>
-              {advisory.suitability.flags.map((flag) => (
-                <li key={flag}>{flag}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="advisory-card">
-            <h3>Soil pH &amp; mineral needs</h3>
-            <p className="advisory-summary">
-              <strong>{advisory.soilProfile.phLabel}</strong>
-            </p>
-            <strong>Minerals likely needed</strong>
-            <ul>
-              {advisory.soilProfile.mineralsNeeded.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <strong className="advisory-subhead">Recommended fertilizers</strong>
-            <ul>
-              {advisory.soilProfile.recommendedFertilizers.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <strong className="advisory-subhead">Avoid / use with caution</strong>
-            <ul>
-              {advisory.soilProfile.avoidFertilizers.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="advisory-card">
-            <h3>Fertilizer timing by growth stage</h3>
-            <div className="fertilizer-stages">
-              {advisory.fertilizerStages.map((step) => (
-                <div key={step.stage} className="fertilizer-stage-item">
-                  <div className="stage-header">
-                    <strong>{step.stage}</strong>
-                    <span>{step.timing}</span>
-                  </div>
-                  <p>{step.guidance}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="advisory-card">
-            <h3>Planting window &amp; pest climate</h3>
-            <div className="climate-timing-block">
-              <strong>Best time to plant</strong>
-              <p>{advisory.climateTiming.bestPlantingWindow}</p>
-            </div>
-            <div className="climate-timing-block">
-              <strong>When pests &amp; diseases peak</strong>
-              <p>{advisory.climateTiming.prominentPestClimate}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-    </>
   );
 }
 
@@ -2304,447 +1770,6 @@ function RecoveryPage({
   );
 }
 
-function EvidencePage({
-  rotations,
-  scenario,
-  selected,
-  setSelected,
-  onChat,
-}: {
-  rotations: ReturnType<typeof rotationsForScenario>;
-  scenario: ClimateScenario;
-  selected: string;
-  setSelected: (id: string) => void;
-  onChat: () => void;
-}) {
-  const current = rotations.find((rotation) => rotation.id === selected) ?? rotations[0]!;
-  const rank = rotations.findIndex((rotation) => rotation.id === current.id);
-  return (
-    <div className="evidence-page">
-      <div className="panel evidence-overview">
-        <div className="evidence-illustration">
-          <div className="evidence-orbit orbit-one" />
-          <div className="evidence-orbit orbit-two" />
-          <span>
-            <FlaskConical size={25} />
-          </span>
-        </div>
-        <div>
-          <span className="eyebrow">SCORING METHODOLOGY</span>
-          <h2>Clear agronomic principles</h2>
-          <p>
-            Rotations are compared on four weighted factors. The weather charts add historical
-            rainfall and temperature context from NASA records.
-          </p>
-        </div>
-      </div>
-      <div className="evidence-columns">
-        <section className="panel evidence-factor-panel">
-          <div className="panel-top">
-            <div>
-              <span className="panel-eyebrow">
-                <BarChart3 size={13} /> HOW ROTATIONS ARE COMPARED
-              </span>
-              <h2>Four weighted factors</h2>
-            </div>
-          </div>
-          <div className="weighted-rows">
-            {[
-              {
-                key: "water",
-                label: "Water efficiency",
-                weight: 30,
-                Icon: Droplets,
-                color: "factor-water",
-                explain: "Ability to fit the selected rainfall scenario.",
-              },
-              {
-                key: "soil",
-                label: "Soil health",
-                weight: 30,
-                Icon: Sprout,
-                color: "factor-soil",
-                explain: "Value of legumes and crop breaks.",
-              },
-              {
-                key: "income",
-                label: "Income potential",
-                weight: 25,
-                Icon: BarChart3,
-                color: "factor-income",
-                explain: "Relative return and market value.",
-              },
-              {
-                key: "resilience",
-                label: "Climate resilience",
-                weight: 15,
-                Icon: ShieldCheck,
-                color: "factor-resilience",
-                explain: "Flexibility under variable weather.",
-              },
-            ].map(({ key, label, weight, Icon, color, explain }) => (
-              <div className="weighted-row" key={key}>
-                <span className={`factor-icon ${color}`}>
-                  <Icon size={15} />
-                </span>
-                <span className="factor-label">
-                  <strong>{label}</strong>
-                  <small>{explain}</small>
-                </span>
-                <span className="factor-weight">
-                  {weight}
-                  <small>%</small>
-                </span>
-                <span className="weight-bar">
-                  <i className={color} style={{ width: `${(weight * 10) / 3.5}%` }} />
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="evidence-footnote">
-            Every factor is scored from 0 to 100. The weighted total is rounded to one decimal.
-          </p>
-        </section>
-        <section className="panel evidence-score-panel">
-          <div className="panel-top">
-            <div>
-              <span className="panel-eyebrow">
-                <BadgeCheck size={13} /> ROTATION SCORECARD
-              </span>
-              <h2>{scenario} scenario</h2>
-            </div>
-            <select
-              aria-label="Choose rotation for evidence"
-              className="compact-select"
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-            >
-              {rotations.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="evidence-total-row">
-            <span>
-              <strong>{current.total}</strong>
-              <small> / 100</small>
-            </span>
-            <span className="rank-pill">
-              Rank {rank + 1} of {rotations.length}
-            </span>
-          </div>
-          <ScoreBreakdown scores={current.scores} showWeight />
-        </section>
-      </div>
-      <section className="panel evidence-sources">
-        <div className="panel-top">
-          <div>
-            <span className="panel-eyebrow">
-              <FileText size={13} /> DATA SOURCES
-            </span>
-            <h2>Where the context comes from</h2>
-          </div>
-        </div>
-        <div className="source-grid">
-          {[
-            {
-              icon: Thermometer,
-              name: "Satellite Weather Records",
-              label: "Climate context",
-              description:
-                "Historical rainfall and temperature can be loaded by farm coordinates and date in crop planning and recovery.",
-            },
-            {
-              icon: Activity,
-              name: "NOAA ENSO",
-              label: "Potential climate signal",
-              description:
-                "Seasonal climate signals add context to planning discussions, not a farm-level forecast.",
-            },
-            {
-              icon: Leaf,
-              name: "Crop guides",
-              label: "Agronomy & rotation",
-              description:
-                "Philippine crop guides and local extension advice should inform real planting decisions.",
-            },
-          ].map(({ icon: Icon, name, label, description }) => (
-            <div className="source-item" key={name}>
-              <span className="source-icon">
-                <Icon size={17} />
-              </span>
-              <span className="source-meta">
-                <strong>{name}</strong>
-                <span>{description}</span>
-              </span>
-              <span className="source-status">
-                {name === "Satellite Weather Records" ? "CONNECTED" : "PLANNED"}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="uncertainty-note">
-          <CircleHelp size={16} />
-          <span>
-            <strong>Farmer guidance:</strong> Local soil testing, seasonal forecasts, and advice
-            from Bukidnon agricultural extension staff support real-world decisions.
-          </span>
-        </div>
-      </section>
-      <div className="evidence-chat-row">
-        <span>Want to see the score broken down in plain language?</span>
-        <Button onClick={onChat}>
-          <MessageCircle size={15} /> Ask the field advisor <ArrowRight size={15} />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function ChatPage({
-  farm,
-  messages,
-  busy,
-  input,
-  setInput,
-  onSend,
-  onSuggestion,
-  scenario,
-  rotation,
-  hazard,
-  loss,
-  advisorWorkflow,
-  setAdvisorWorkflow,
-}: {
-  farm: Farm;
-  messages: ChatMessage[];
-  busy: boolean;
-  input: string;
-  setInput: (input: string) => void;
-  onSend: (question?: string) => void;
-  onSuggestion: (question: string) => void;
-  scenario: ClimateScenario;
-  rotation: string;
-  hazard: Hazard;
-  loss: string;
-  advisorWorkflow: "recovery" | "prevention";
-  setAdvisorWorkflow: (workflow: "recovery" | "prevention") => void;
-}) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [messages, busy]);
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!input.trim() || busy) return;
-    onSend();
-  }
-
-  const suggestions =
-    advisorWorkflow === "recovery"
-      ? SUGGESTIONS_BY_WORKFLOW.recovery
-      : SUGGESTIONS_BY_WORKFLOW.prevention;
-
-  return (
-    <div className="chat-layout-stacked">
-      {/* Box 1: Picking up where you left off (4 Columns) */}
-      <section className="panel chat-context-summary-panel">
-        <div className="chat-context-summary-head">
-          <h2>Picking up where you left off.</h2>
-        </div>
-
-        <div className="chat-context-four-columns">
-          {/* Column 1 */}
-          <div className="chat-context-card">
-            <span className="context-icon">
-              <MapPin size={18} />
-            </span>
-            <div className="context-card-info">
-              <small>FIELD PROFILE</small>
-              <strong>{farm.place || "Location not set"}</strong>
-              <span>
-                {farm.area} hectares · {farm.soil || "Soil unverified"}
-              </span>
-            </div>
-          </div>
-
-          {/* Column 2 */}
-          <div className="chat-context-card">
-            <span className="context-icon context-climate">
-              <CloudSun size={18} />
-            </span>
-            <div className="context-card-info">
-              <small>PLANNING SCENARIO</small>
-              <strong>{scenario}</strong>
-              <span>Climate scenario</span>
-            </div>
-          </div>
-
-          {/* Column 3 */}
-          <div className="chat-context-card">
-            <span className="context-icon context-crop">
-              <Flower2 size={18} />
-            </span>
-            <div className="context-card-info">
-              <small>ROTATION SEQUENCE</small>
-              <strong>{rotation}</strong>
-              <span>Crop sequence</span>
-            </div>
-          </div>
-
-          {/* Column 4 */}
-          <div className="chat-context-card">
-            <span className="context-icon context-hazard">
-              <HeartHandshake size={18} />
-            </span>
-            <div className="context-card-info">
-              <small>RECOVERY ESTIMATE</small>
-              <strong>
-                {hazard} · {loss}
-              </strong>
-              <span>Projected recovery</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Box 2: Field Advisor (Full width of the page) */}
-      <section className="panel advisor-panel-fullwidth">
-        <div className="advisor-head">
-          <div className="advisor-identity">
-            <div className="advisor-avatar">
-              <Sprout size={24} strokeWidth={2.2} />
-            </div>
-            <div className="advisor-title-wrap">
-              <strong>Your NASABUKID guide</strong>
-              <span>
-                <span className="advisor-status-dot" />
-                AI Field Guide
-              </span>
-            </div>
-          </div>
-
-          <div className="advisor-segmented-control" role="tablist" aria-label="Advice focus">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={advisorWorkflow === "prevention"}
-              className={`advisor-seg-btn ${advisorWorkflow === "prevention" ? "advisor-seg-active" : ""}`}
-              onClick={() => setAdvisorWorkflow("prevention")}
-            >
-              <Wheat size={15} />
-              <span>Crop planning</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={advisorWorkflow === "recovery"}
-              className={`advisor-seg-btn ${advisorWorkflow === "recovery" ? "advisor-seg-active" : ""}`}
-              onClick={() => setAdvisorWorkflow("recovery")}
-            >
-              <HeartHandshake size={15} />
-              <span>Damage recovery</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="chat-messages" aria-live="polite">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`chat-row ${message.role === "user" ? "chat-row-user" : ""}`}
-            >
-              <span className={`chat-avatar ${message.role === "user" ? "chat-user-avatar" : ""}`}>
-                {message.role === "assistant" ? <Sprout size={18} /> : "B"}
-              </span>
-              <div className={`chat-bubble ${message.role === "user" ? "chat-user-bubble" : ""}`}>
-                <span className="chat-role">
-                  {message.role === "assistant" ? (
-                    <>
-                      <Sparkles size={12} /> FIELD GUIDE
-                    </>
-                  ) : (
-                    "YOU"
-                  )}
-                </span>
-                <p>{message.text}</p>
-              </div>
-            </div>
-          ))}
-          {busy && (
-            <div className="chat-row">
-              <span className="chat-avatar">
-                <Sprout size={18} />
-              </span>
-              <div className="chat-bubble">
-                <span className="chat-role">
-                  <Sparkles size={12} /> FIELD GUIDE
-                </span>
-                <div className="typing-indicator" aria-label="Advisor thinking">
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        <div className="suggested-questions">
-          <span className="suggestion-heading">
-            <Sparkles size={13} /> SUGGESTED QUESTIONS
-          </span>
-          <div className="suggestion-chips-scroller">
-            {suggestions.map((question) => (
-              <button key={question} type="button" onClick={() => onSuggestion(question)}>
-                <span>{question}</span>
-                <ArrowUpRight size={14} />
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <form className="chat-input-row" onSubmit={handleSubmit}>
-          <Textarea
-            aria-label="Ask a question"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleSubmit(event);
-              }
-            }}
-            placeholder="Ask a question..."
-            rows={1}
-            maxLength={1200}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            aria-label="Send question"
-            disabled={!input.trim() || busy}
-          >
-            <Send size={18} />
-          </Button>
-        </form>
-
-        <span className="chat-safety">
-          <ShieldCheck size={15} className="shrink-0" />
-          <span>
-            Verify critical agronomic decisions with a local agricultural officer.
-          </span>
-        </span>
-      </section>
-    </div>
-  );
-}
-
 function RangeField({
   id,
   label,
@@ -2781,59 +1806,6 @@ function RangeField({
           <small>%</small>
         </span>
       </div>
-    </div>
-  );
-}
-
-function ScoreBreakdown({
-  scores,
-  showWeight = false,
-}: {
-  scores: { water: number; soil: number; income: number; resilience: number };
-  showWeight?: boolean;
-}) {
-  const metrics: Array<{
-    key: keyof typeof scores;
-    label: string;
-    weight: number;
-  }> = [
-      { key: "water", label: "Water", weight: 30 },
-      { key: "soil", label: "Soil", weight: 30 },
-      { key: "income", label: "Income", weight: 25 },
-      { key: "resilience", label: "Resilience", weight: 15 },
-    ];
-  return (
-    <div className={`score-breakdown ${showWeight ? "score-breakdown-expanded" : ""}`}>
-      {metrics.map((metric) => (
-        <div key={metric.key} className="score-factor">
-          <div>
-            <span>
-              {metric.label}
-              {showWeight && <small> × {metric.weight}%</small>}
-            </span>
-            <strong>{scores[metric.key]}</strong>
-          </div>
-          <div className="score-track">
-            <span
-              className={`score-fill score-${metric.key}`}
-              style={{ width: `${scores[metric.key]}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ScoreRing({ score }: { score: number }) {
-  return (
-    <div
-      className="score-ring"
-      style={{ "--score-angle": `${score * 3.6}deg` } as React.CSSProperties}
-    >
-      <span>
-        <Leaf size={13} />
-      </span>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { useFarmSoil } from "@/hooks/use-farm-soil";
 import { suggestDrainage } from "@/lib/fieldshift-demo";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -8,9 +9,7 @@ import {
   nominatimPlaceRequestUrl,
   parseNominatimPlace,
   parsePlace,
-  parseSoil,
   placeRequestUrl,
-  soilRequestUrl,
   terrainRequestUrl,
   parseTerrain,
 } from "@/lib/farm-context";
@@ -92,18 +91,7 @@ export function FarmPublicData({
       throw new Error("No municipality or address is available for this point. Enter it manually.");
     },
   });
-  const soil = useQuery({
-    ...options,
-    queryKey: ["farm-soil", key],
-    queryFn: async ({ signal }) => {
-      const result = await fetchPublicContext(soilRequestUrl(location), signal);
-      return {
-        ...parseSoil(result.payload),
-        sourceUrl: result.sourceUrl,
-        retrievedAt: result.retrievedAt,
-      };
-    },
-  });
+  const soil = useFarmSoil(location, confirmed && ready === key);
   const terrain = useQuery({
     ...options,
     queryKey: ["farm-terrain", key],
@@ -222,7 +210,7 @@ export function FarmPublicData({
         {soil.data && (
           <p>
             <a href={soil.data.sourceUrl} target="_blank" rel="noreferrer">
-              Exact SoilGrids JSON request ↗
+              Exact SoilGrids response ↗
             </a>{" "}
             · Retrieved {new Date(soil.data.retrievedAt).toLocaleString()} · 250 m grid, 5–15 cm
             depth, mean predictions at one farm reference point, not a boundary-wide average.{" "}

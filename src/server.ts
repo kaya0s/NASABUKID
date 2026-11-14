@@ -1,3 +1,4 @@
+import { plainAdvisorText } from "./lib/advisor-text";
 import "./lib/error-capture";
 import { advisorRequestSchema, buildAdvisorMessages } from "./lib/advisor";
 
@@ -100,24 +101,41 @@ export default {
           );
         let result: Response;
         try {
-          result = await fetch(
-            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-            {
-              method: "POST",
-              signal: AbortSignal.timeout(60_000),
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-              body: JSON.stringify({
-                model: "gemini-3.1-flash-lite",
-                messages,
-                reasoning_effort: "low",
-                max_tokens: 1500,
-              }),
-            },
-          );
+          const url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+          const options = {
+            method: "POST",
+            signal: AbortSignal.timeout(60_000),
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+            body: JSON.stringify({
+              model: "gemini-3.1-flash-lite",
+              messages,
+              reasoning_effort: "low",
+              max_tokens: 1500,
+            }),
+          };
+          try {
+            result = await fetch(url, options);
+          } catch (error) {
+            // Retry only temporary DNS failure: no generation request reached the provider.
+            if (
+              (error as { cause?: { code?: unknown } } | null)?.cause?.code !== "EAI_AGAIN" ||
+              options.signal.aborted
+            )
+              throw error;
+            result = await fetch(url, options);
+          }
         } catch (error) {
           const timedOut =
             (error instanceof Error || error instanceof DOMException) &&
             error.name === "TimeoutError";
+          const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+          console.error("Advisor connection failure", {
+            reason: timedOut
+              ? "TIMEOUT"
+              : typeof code === "string" && /^[A-Z0-9_]{1,64}$/.test(code)
+                ? code
+                : "NETWORK_ERROR",
+          });
           return new Response(
             timedOut
               ? "The advisor took too long to respond. Please try again."
@@ -146,7 +164,9 @@ export default {
             status: 502,
           });
         const answer =
-          typeof choice?.message?.content === "string" ? choice.message.content.trim() : "";
+          typeof choice?.message?.content === "string"
+            ? plainAdvisorText(choice.message.content)
+            : "";
         return answer
           ? Response.json({ answer })
           : new Response("The advisor returned no answer", { status: 502 });

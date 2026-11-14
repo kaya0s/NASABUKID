@@ -1,5 +1,5 @@
 import { SCORE_WEIGHTS, type Rotation } from "@/lib/fieldshift-demo";
-import type { HistoricalWeather } from "@/lib/nasa-power";
+import { calendarWeather, type HistoricalWeather } from "@/lib/nasa-power";
 
 export function RotationEvidence({
   rotation,
@@ -10,6 +10,9 @@ export function RotationEvidence({
   farm: { ph: string; soil: string; drainage: string; irrigation: string; planted: string };
   historical: HistoricalWeather | null;
 }) {
+  const rainfall = historical
+    ? calendarWeather(historical.days).monthlyRainfall[Number(farm.planted.slice(5, 7)) - 1]
+    : null;
   return (
     <details className="rotation-evidence">
       <summary>Evidence &amp; assumptions</summary>
@@ -21,8 +24,9 @@ export function RotationEvidence({
               <a href={historical.sourceUrl} target="_blank" rel="noreferrer">
                 NASA POWER historical records ↗
               </a>{" "}
-              · {historical.start} to {historical.end}. Planting-month rainfall is used in the demo
-              water calculation described above. Retrieved{" "}
+              · {historical.start} to {historical.end}. {rainfall != null
+                ? `Complete planting-month rainfall (${rainfall.toFixed(1)} mm) is used in the demo water calculation.`
+                : "Complete planting-month rainfall is unavailable; the water score uses demo scenario assumptions."} Retrieved{" "}
               {new Date(historical.retrievedAt).toLocaleString()}.
             </>
           ) : (

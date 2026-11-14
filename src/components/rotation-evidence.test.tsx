@@ -46,4 +46,5 @@ it("links the exact applied historical source rather than implying every display
     expect.stringContaining("latitude=8.3"),
   );
   expect(screen.getByText(/2024-01-01 to 2024-12-31/)).toBeInTheDocument();
+  expect(screen.getByText(/Complete planting-month rainfall is unavailable/)).toBeInTheDocument();
 });
