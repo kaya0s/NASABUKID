@@ -270,7 +270,7 @@
   .agri-stat-label { font-size: 11px; color: rgba(255, 255, 255, 0.75); }
   .agri-stat-val { font-size: 15px; font-weight: 700; color: #ffffff; }
 
-  /* Section Header: "My Fields" */
+  /* Section Header: "Farm Tools" */
   .agri-section-header { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
   .agri-section-title { font-size: 20px; font-weight: 700; color: var(--foreground); font-family: var(--font-display); margin: 0; }
   .agri-see-all-btn { background: transparent; border: 0; color: var(--muted-foreground); font-size: 13px; font-weight: 600; cursor: pointer; transition: color .15s; }
@@ -297,6 +297,7 @@
   .agri-card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 12px; }
   .agri-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; background: var(--mint); color: var(--primary); }
   .tag-coral { background: oklch(0.96 0.035 38); color: var(--coral); }
+  .tag-sky { background: oklch(0.95 0.04 230); color: oklch(0.42 0.12 230); }
   .agri-action-arrow { color: var(--primary); display: flex; align-items: center; }
 
   /* Quick Actions Row */

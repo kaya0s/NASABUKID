@@ -301,6 +301,64 @@ function OverviewPage({
 }) {
   const [activeTab, setActiveTab] = useState<string>("All");
 
+  const categories = ["All", "Crop Planning", "Damage Check", "Farm Map", "Advisor"];
+
+  const tools = [
+    {
+      id: "planning",
+      category: "Crop Planning",
+      title: "Optimize Crop Harvest",
+      description: "Compare crop rotation sequences for upcoming dry or wet seasons.",
+      tag: "Crop Planning",
+      tagClass: "agri-tag",
+      image: bukidnonFields,
+      alt: "Bukidnon crop planning field",
+      Icon: Sprout,
+      action: onPrevention,
+    },
+    {
+      id: "recovery",
+      category: "Damage Check",
+      title: "Field Damage Check",
+      description: "Calculate weather loss and evaluate stand recovery after storms or floods.",
+      tag: "Damage Assessment",
+      tagClass: "agri-tag tag-coral",
+      image: floodCorn,
+      alt: "Damage check field in Bukidnon",
+      Icon: HeartHandshake,
+      action: onRecover,
+    },
+    {
+      id: "map",
+      category: "Farm Map",
+      title: "Farm Boundary & Soil",
+      description: "Draw field boundary, verify area in hectares, and check soil texture & pH.",
+      tag: "My Farm",
+      tagClass: "agri-tag",
+      image: bukidnonFields,
+      alt: "Farm boundary mapping and soil profile",
+      Icon: MapPin,
+      action: onPlan,
+    },
+    {
+      id: "advisor",
+      category: "Advisor",
+      title: "Ask Field Advisor",
+      description: "Get agronomy answers on crop rotation, soil health, and weather risks.",
+      tag: "Field Advisor",
+      tagClass: "agri-tag tag-sky",
+      image: bukidnonFields,
+      alt: "FieldShift advisor conversation",
+      Icon: MessageCircle,
+      action: onChat,
+    },
+  ];
+
+  const visibleTools =
+    activeTab === "All"
+      ? tools
+      : tools.filter((tool) => tool.category === activeTab);
+
   return (
     <div className="agri-overview-container">
       {/* Top Agricultural Weather & Greeting Banner */}
@@ -309,20 +367,26 @@ function OverviewPage({
         onLocationFound={onLocationFound}
       />
 
-      {/* Section Header: "My Fields" with "See All" */}
+      {/* Section Header: "Farm Tools" with "View All" */}
       <div className="agri-section-header">
-        <h2 className="agri-section-title">My Fields</h2>
-        <button type="button" className="agri-see-all-btn" onClick={onPlan}>
-          See All
+        <h2 className="agri-section-title">Farm Tools</h2>
+        <button
+          type="button"
+          className="agri-see-all-btn"
+          onClick={() => setActiveTab("All")}
+        >
+          {activeTab === "All" ? "View All" : "Show All"}
         </button>
       </div>
 
-      {/* Horizontal Filter Chips */}
-      <div className="agri-pill-filters" role="tablist">
-        {["All", "Corn", "Vegetables", "Legumes", "Root Crops"].map((cat) => (
+      {/* Horizontal Filter Chips for Farmer Workspaces */}
+      <div className="agri-pill-filters" role="tablist" aria-label="Farm tool categories">
+        {categories.map((cat) => (
           <button
             key={cat}
             type="button"
+            role="tab"
+            aria-selected={activeTab === cat}
             className={`agri-pill ${activeTab === cat ? "agri-pill-active" : ""}`}
             onClick={() => setActiveTab(cat)}
           >
@@ -333,44 +397,54 @@ function OverviewPage({
 
       {/* Modern Visual Cards with Images & Bookmarks */}
       <div className="agri-cards-scroller">
-        <article className="agri-field-card" onClick={onPrevention}>
-          <div className="agri-card-media">
-            <img src={bukidnonFields} alt="Bukidnon crop planning field" />
-            <button className="agri-bookmark-btn" aria-label="Bookmark" onClick={(e) => e.stopPropagation()}>
-              <Sprout size={16} />
-            </button>
-          </div>
-          <div className="agri-card-info">
-            <h3>Optimize Crop Harvest</h3>
-            <p>Compare crop rotation sequences for upcoming dry or wet seasons.</p>
-            <div className="agri-card-foot">
-              <span className="agri-tag">Crop Planning</span>
-              <span className="agri-action-arrow"><ArrowRight size={15} /></span>
-            </div>
-          </div>
-        </article>
-
-        <article className="agri-field-card" onClick={onRecover}>
-          <div className="agri-card-media">
-            <img src={floodCorn} alt="Damage check field in Bukidnon" />
-            <button className="agri-bookmark-btn" aria-label="Bookmark" onClick={(e) => e.stopPropagation()}>
-              <HeartHandshake size={16} />
-            </button>
-          </div>
-          <div className="agri-card-info">
-            <h3>Field Damage Check</h3>
-            <p>Calculate weather loss and evaluate stand recovery after storms.</p>
-            <div className="agri-card-foot">
-              <span className="agri-tag tag-coral">Damage Assessment</span>
-              <span className="agri-action-arrow"><ArrowRight size={15} /></span>
-            </div>
-          </div>
-        </article>
+        {visibleTools.map((tool) => {
+          const ToolIcon = tool.Icon;
+          return (
+            <article
+              key={tool.id}
+              className="agri-field-card"
+              onClick={tool.action}
+              tabIndex={0}
+              role="button"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  tool.action();
+                }
+              }}
+            >
+              <div className="agri-card-media">
+                <img src={tool.image} alt={tool.alt} />
+                <button
+                  type="button"
+                  className="agri-bookmark-btn"
+                  aria-label={`Open ${tool.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    tool.action();
+                  }}
+                >
+                  <ToolIcon size={16} />
+                </button>
+              </div>
+              <div className="agri-card-info">
+                <h3>{tool.title}</h3>
+                <p>{tool.description}</p>
+                <div className="agri-card-foot">
+                  <span className={tool.tagClass}>{tool.tag}</span>
+                  <span className="agri-action-arrow">
+                    <ArrowRight size={15} />
+                  </span>
+                </div>
+              </div>
+            </article>
+          );
+        })}
       </div>
 
       {/* Quick Actions Row */}
       <div className="agri-quick-actions">
-        <Button size="lg" className="agri-btn-primary" onClick={onPlan}>
+        <Button size="lg" className="agri-btn-primary" onClick={onPrevention}>
           <Sprout size={18} /> Plan My Crops
         </Button>
         <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
