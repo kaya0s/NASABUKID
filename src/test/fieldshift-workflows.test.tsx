@@ -5,6 +5,7 @@ import { Route } from "@/routes/index";
 
 const App = Route.options.component!;
 beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -127,4 +128,59 @@ it("fills public location and soil fields and preserves manual corrections acros
   expect(screen.getByLabelText("Field drainage")).toHaveValue("Good");
   expect(screen.getByLabelText("Irrigation")).toHaveValue("Unknown");
   expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
+});
+
+it("preserves the farmer's loss assumptions when the hazard changes", () => {
+  renderApp();
+  fireEvent.click(screen.getByRole("button", { name: "Damage recovery" }));
+  fireEvent.change(screen.getByLabelText("Area affected"), { target: { value: "20" } });
+  fireEvent.change(screen.getByLabelText("Expected yield loss on affected area"), {
+    target: { value: "10" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Drought" }));
+  expect(screen.getByLabelText("Area affected")).toHaveValue("20");
+  expect(screen.getByLabelText("Expected yield loss on affected area")).toHaveValue("10");
+  expect(screen.queryByText(/SAMPLE OBSERVATIONS/)).not.toBeInTheDocument();
+});
+
+it("requires a valid recovery timeline and recalculates an edited farm area", () => {
+  renderApp();
+  fireEvent.click(screen.getByRole("button", { name: "Damage recovery" }));
+  fireEvent.change(screen.getByLabelText("Farm area (ha)"), { target: { value: "2" } });
+  expect(screen.getByText("₱49,140")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("When did it happen?"), {
+    target: { value: "2025-01-02" },
+  });
+  fireEvent.change(screen.getByLabelText("Planned next planting"), {
+    target: { value: "2025-01-01" },
+  });
+  expect(screen.getByRole("button", { name: "Compare next-season options" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Planned next planting"), {
+    target: { value: "2025-02-01" },
+  });
+  expect(screen.getByRole("button", { name: "Compare next-season options" })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("When did it happen?"), { target: { value: "" } });
+  expect(screen.getByRole("button", { name: "Compare next-season options" })).toBeDisabled();
+});
+
+it("starts with farm setup and sends the chosen option to the advisor", async () => {
+  renderApp();
+  fireEvent.click(screen.getByRole("button", { name: "Set up my farm" }));
+  expect(screen.getByLabelText("Latitude")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Continue to crop planning" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "Ask the advisor" })[1]!);
+  fireEvent.change(screen.getByPlaceholderText("Ask about your sample field plan…"), {
+    target: { value: "Explain this option" },
+  });
+  // The submit button is labeled for keyboard and screen-reader users.
+  fireEvent.submit(
+    screen.getByPlaceholderText("Ask about your sample field plan…").closest("form")!,
+  );
+  await waitFor(() => {
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/advisor");
+    expect(call).toBeDefined();
+    const body = JSON.parse(String(call![1]?.body));
+    expect(body.context.rotationDetails.nextCrop).toBe("Mungbean");
+    expect(body.context.workflow).toBe("prevention");
+  });
 });

@@ -37,6 +37,19 @@ export function ApiSources() {
           for non-commercial use.
         </li>
         <li>
+          <a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">
+            Open-Meteo weather
+          </a>{" "}
+          — modeled current conditions, separate from historical NASA records.
+        </li>
+        <li>
+          <a href="https://nasa-gibs.github.io/gibs-api-docs/" target="_blank" rel="noreferrer">
+            NASA GIBS
+          </a>{" "}
+          — regional map imagery; visual overlays are separate from POWER values and demo crop
+          scores.
+        </li>
+        <li>
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             © OpenStreetMap contributors
           </a>{" "}
@@ -50,7 +63,8 @@ export function ApiSources() {
       <p>
         Exact request URLs and retrieval dates are available beside the relevant records. Drainage
         screening and crop scores use unvalidated demo rules. Irrigation requires farmer
-        confirmation. NOAA and AI services are not connected.
+        confirmation. NOAA is not connected. The optional Gemini advisor explains inputs; it does
+        not analyze photos.
       </p>
     </details>
   );

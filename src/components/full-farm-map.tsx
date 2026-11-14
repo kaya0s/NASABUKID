@@ -235,7 +235,11 @@ async function searchLocations(
   return results;
 }
 
-async function lookupLandmark(lat: number, lon: number, signal?: AbortSignal): Promise<{ title: string; subtitle: string }> {
+async function lookupLandmark(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<{ title: string; subtitle: string }> {
   const url = `https://photon.komoot.io/reverse?${new URLSearchParams({
     lat: String(lat),
     lon: String(lon),
@@ -359,7 +363,11 @@ async function lookupLocationPhoto(
         query?: {
           pages?: Record<
             string,
-            { index?: number; title?: string; imageinfo?: Array<{ thumburl?: string; url?: string }> }
+            {
+              index?: number;
+              title?: string;
+              imageinfo?: Array<{ thumburl?: string; url?: string }>;
+            }
           >;
         };
       };
@@ -372,7 +380,9 @@ async function lookupLocationPhoto(
         if (src && isRepresentativePhoto(name)) {
           return {
             url: src,
-            label: (page.title || "Nearby area photo").replace(/^File:/, "").replace(/\.[^.]+$/, ""),
+            label: (page.title || "Nearby area photo")
+              .replace(/^File:/, "")
+              .replace(/\.[^.]+$/, ""),
           };
         }
       }
@@ -512,7 +522,12 @@ export function FullFarmMap({
   ]);
   const [modalOffset, setModalOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
+  const dragStartRef = useRef<{
+    startX: number;
+    startY: number;
+    initX: number;
+    initY: number;
+  } | null>(null);
 
   // Location search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -633,7 +648,9 @@ export function FullFarmMap({
     if (!dragStartRef.current) return;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch { }
+    } catch {
+      // Pointer capture may already be released when the drag ends.
+    }
     dragStartRef.current = null;
     setIsDragging(false);
   };
@@ -665,7 +682,12 @@ export function FullFarmMap({
   const accuracyCircleRef = useRef<CircleInstance | null>(null);
   const lookupAbortRef = useRef<AbortController | null>(null);
 
-  function showLandmarkFor(lat: number, lng: number, source: "gps" | "pin", accuracyMeters: number | null) {
+  function showLandmarkFor(
+    lat: number,
+    lng: number,
+    source: "gps" | "pin",
+    accuracyMeters: number | null,
+  ) {
     lookupAbortRef.current?.abort();
     const controller = new AbortController();
     lookupAbortRef.current = controller;
@@ -710,7 +732,10 @@ export function FullFarmMap({
       .then((L) => {
         if (disposed || !containerRef.current) return;
         leafletRef.current = L;
-        const point: [number, number] = [locationRef.current.latitude, locationRef.current.longitude];
+        const point: [number, number] = [
+          locationRef.current.latitude,
+          locationRef.current.longitude,
+        ];
         const instance = L.map(containerRef.current, {
           scrollWheelZoom: true,
           zoomControl: false,
@@ -788,12 +813,15 @@ export function FullFarmMap({
             iconSize: [18, 18],
             iconAnchor: [9, 9],
           });
-          const edgeMarker = L.marker(getEastEdge({ lat: point[0], lng: point[1] }, radiusRef.current), {
-            icon: edgeIcon,
-            interactive: true,
-            draggable: true,
-            zIndexOffset: 900,
-          }).addTo(instance);
+          const edgeMarker = L.marker(
+            getEastEdge({ lat: point[0], lng: point[1] }, radiusRef.current),
+            {
+              icon: edgeIcon,
+              interactive: true,
+              draggable: true,
+              zIndexOffset: 900,
+            },
+          ).addTo(instance);
 
           edgeMarker.on?.("drag", () => {
             const edgeLatLng = edgeMarker.getLatLng?.();
@@ -802,7 +830,10 @@ export function FullFarmMap({
               lng: locationRef.current.longitude,
             };
             if (!edgeLatLng) return;
-            const nextRadius = Math.max(15, Math.min(2000, Math.round(distanceMeters(centerLatLng, edgeLatLng))));
+            const nextRadius = Math.max(
+              15,
+              Math.min(2000, Math.round(distanceMeters(centerLatLng, edgeLatLng))),
+            );
             accuracyCircleRef.current?.setRadius(nextRadius);
             setRadiusMeters(nextRadius);
           });
@@ -1150,7 +1181,11 @@ export function FullFarmMap({
             </Button>
 
             {layersOpen && (
-              <div className="full-map-layers-menu" role="menu" aria-label="Map layers and NASA heatmaps">
+              <div
+                className="full-map-layers-menu"
+                role="menu"
+                aria-label="Map layers and NASA heatmaps"
+              >
                 <div className="full-map-layers-section">Base map</div>
                 {(
                   [
@@ -1189,33 +1224,41 @@ export function FullFarmMap({
                   <span>Off</span>
                   {heatmap === "none" && <Check size={14} />}
                 </button>
-                {(Object.keys(HEATMAP_LAYERS) as Array<Exclude<HeatmapLayer, "none">>).map((key) => {
-                  const cfg = HEATMAP_LAYERS[key];
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={heatmap === key}
-                      className={`full-map-layers-item ${heatmap === key ? "is-active" : ""}`}
-                      onClick={() => {
-                        setHeatmap(key);
-                        setLayersOpen(false);
-                      }}
-                    >
-                      <div>
-                        <strong>{cfg.label}</strong>
-                        <small>{cfg.detail}</small>
-                      </div>
-                      {heatmap === key && <Check size={14} />}
-                    </button>
-                  );
-                })}
+                {(Object.keys(HEATMAP_LAYERS) as Array<Exclude<HeatmapLayer, "none">>).map(
+                  (key) => {
+                    const cfg = HEATMAP_LAYERS[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={heatmap === key}
+                        className={`full-map-layers-item ${heatmap === key ? "is-active" : ""}`}
+                        onClick={() => {
+                          setHeatmap(key);
+                          setLayersOpen(false);
+                        }}
+                      >
+                        <div>
+                          <strong>{cfg.label}</strong>
+                          <small>{cfg.detail}</small>
+                        </div>
+                        {heatmap === key && <Check size={14} />}
+                      </button>
+                    );
+                  },
+                )}
               </div>
             )}
           </div>
 
-          <Button type="button" size="sm" variant="secondary" onClick={locateMe} disabled={locating}>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={locateMe}
+            disabled={locating}
+          >
             <Locate size={14} className={locating ? "animate-spin" : ""} />
             {locating ? "Locating…" : "Locate me"}
           </Button>
@@ -1333,7 +1376,7 @@ export function FullFarmMap({
           <div className="full-map-profile-head">
             <div>
               <div className="drawer-badges-row">
-                <span className="drawer-badge-nasa">NASA EARTHDATA</span>
+                <span className="drawer-badge-nasa">REGIONAL DATA · DEMO OPTIONS</span>
                 <span className="drawer-badge-engine">Rotation Engine</span>
                 {historical?.sourceUrl && (
                   <a
@@ -1431,7 +1474,11 @@ export function FullFarmMap({
                         <span>HEAT</span>
                       </div>
                       <strong>
-                        {climateLoading ? "…" : surfaceTemp !== null ? `${surfaceTemp.toFixed(1)}°C` : "—"}
+                        {climateLoading
+                          ? "…"
+                          : surfaceTemp !== null
+                            ? `${surfaceTemp.toFixed(1)}°C`
+                            : "—"}
                       </strong>
                       <small>Ground Temp</small>
                     </button>
@@ -1592,7 +1639,7 @@ export function FullFarmMap({
                   </div>
 
                   <div className="drawer-sequence-heading">
-                    <span>SUGGESTED ROTATION SEQUENCE (3 STRATEGIES)</span>
+                    <span>THREE DEMO OPTIONS · NOT VALIDATED RECOMMENDATIONS</span>
                   </div>
 
                   <div className="drawer-timeline">
@@ -1606,9 +1653,7 @@ export function FullFarmMap({
                           <button
                             type="button"
                             className="drawer-timeline-summary"
-                            onClick={() =>
-                              setExpandedStrategyId(isExpanded ? "" : strategy.id)
-                            }
+                            onClick={() => setExpandedStrategyId(isExpanded ? "" : strategy.id)}
                           >
                             <span className="timeline-step-num">{idx + 1}</span>
                             <img
@@ -1622,7 +1667,7 @@ export function FullFarmMap({
                                   {strategy.plantingWindow} · {strategy.cycleDays}
                                 </span>
                                 <span className="timeline-match-pill">
-                                  {Math.round(strategy.total)}% NASA Match
+                                  {Math.round(strategy.total)} / 100 · Demo
                                 </span>
                               </div>
                               <strong>
@@ -1784,7 +1829,7 @@ export function FullFarmMap({
                   <Input
                     id="map-soil-type"
                     value={farm.soil}
-                    placeholder="Awaiting public estimate"
+                    placeholder="Unavailable public estimate"
                     onChange={(e) => onUpdateFarm("soil", e.target.value)}
                   />
                 </div>
@@ -1844,7 +1889,10 @@ export function FullFarmMap({
                         ? `${slope.toFixed(1)}% slope · Moderate`
                         : `${slope.toFixed(1)}% slope · Suitable`;
                 return (
-                  <div className="full-map-nasa-snapshot" aria-label="NASA climate and terrain summary">
+                  <div
+                    className="full-map-nasa-snapshot"
+                    aria-label="NASA climate and terrain summary"
+                  >
                     <div>
                       <span>NASA POWER (90d)</span>
                       <strong>
@@ -1949,7 +1997,8 @@ export function FullFarmMap({
               <div className="landmark-radius-row">
                 <label htmlFor="landmark-radius-range">Area radius (drag pin or edge)</label>
                 <span>
-                  {radiusMeters} m (≈ {((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)} ha)
+                  {radiusMeters} m (≈ {((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)}{" "}
+                  ha)
                 </span>
               </div>
               <input
