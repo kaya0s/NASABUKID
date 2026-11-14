@@ -1842,6 +1842,15 @@
     color: #0f172a;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   }
+/* The advisor header's second child is the segmented control in this layout,
+   not a stacked title block. */
+.advisor-head > .advisor-segmented-control:nth-child(2) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    min-width: 0;
+    gap: 4px;
+    margin-left: auto;
+  }
 .typing-indicator {
     display: inline-flex;
     align-items: center;
