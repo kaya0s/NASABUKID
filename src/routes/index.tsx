@@ -41,6 +41,7 @@ import {
   Plus,
   RotateCcw,
   Send,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Sprout,
@@ -147,27 +148,21 @@ const NAV: Array<{
   section: string;
   isCenter?: boolean;
 }> = [
-  { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
-  { id: "fullmap", label: "Full Map (New)", icon: MapIcon, section: "WORKSPACE" },
-  {
-    id: "recovery",
-    label: "Damage recovery",
-    icon: HeartHandshake,
-    section: "WORKSPACE",
-  },
-  {
-    id: "evidence",
-    label: "Evidence & sources",
-    icon: FileText,
-    section: "INSIGHTS",
-  },
-  {
-    id: "chat",
-    label: "Field advisor",
-    icon: MessageCircle,
-    section: "INSIGHTS",
-  },
-];
+    { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
+    { id: "fullmap", label: "Full Map", icon: MapIcon, section: "WORKSPACE" },
+    {
+      id: "evidence",
+      label: "Evidence & sources",
+      icon: FileText,
+      section: "INSIGHTS",
+    },
+    {
+      id: "chat",
+      label: "Field advisor",
+      icon: MessageCircle,
+      section: "INSIGHTS",
+    },
+  ];
 const SCENARIOS: ClimateScenario[] = ["Typical", "El Niño-like", "Wet"];
 const CROP_OPTIONS = [
   "Pineapple",
@@ -277,6 +272,8 @@ function useIsMobile() {
 function FieldShift() {
   const isMobile = useIsMobile();
   const [advisorWorkflow, setAdvisorWorkflow] = useState<"recovery" | "prevention">("prevention");
+  const [mapAdvisoryMode, setMapAdvisoryMode] = useState<"rotation" | "recovery">("rotation");
+  const [recoveryCardStep, setRecoveryCardStep] = useState<1 | 2>(1);
   const [profileEdited, setProfileEdited] = useState(false);
   const [assumptionsEdited, setAssumptionsEdited] = useState(false);
   const [actualPlantingDate, setActualPlantingDate] = useState("");
@@ -417,10 +414,10 @@ function FieldShift() {
   }
   const monthlyRainfall = historical
     ? Array.from({ length: 12 }, (_, month) =>
-        historical.days
-          .filter((day) => Number(day.date.slice(5, 7)) === month + 1)
-          .reduce((sum, day) => sum + (day.rainfall ?? 0), 0),
-      )
+      historical.days
+        .filter((day) => Number(day.date.slice(5, 7)) === month + 1)
+        .reduce((sum, day) => sum + (day.rainfall ?? 0), 0),
+    )
     : undefined;
 
   const rotations = buildRotationStrategies(scenario, {
@@ -455,9 +452,19 @@ function FieldShift() {
     ? PHP.format(loss)
     : "unavailable until valid assumptions are entered";
 
+  const HIDDEN_PAGES: ReadonlySet<Page> = new Set([
+    "overview",
+    "farm",
+    "prevention",
+    "recovery",
+    "evidence",
+    "chat",
+  ]);
+
   function goTo(next: Page) {
-    if (next === "recovery" || next === "prevention") setAdvisorWorkflow(next);
-    setPage(next);
+    const resolved: Page = HIDDEN_PAGES.has(next) ? "fullmap" : next;
+    if (resolved === "recovery" || resolved === "prevention") setAdvisorWorkflow(resolved);
+    setPage(resolved);
     setMobileNavOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -563,26 +570,26 @@ function FieldShift() {
           },
           weather: weather
             ? {
-                start: weather.start,
-                end: weather.end,
-                sourceUrl: weather.sourceUrl,
-                rainfallMm: weather.days.some((day) => day.rainfall === null)
-                  ? null
-                  : weather.days.reduce((sum, day) => sum + (day.rainfall ?? 0), 0),
-                missingDays: weather.days.filter(
-                  (day) => day.rainfall === null || day.temperature === null,
-                ).length,
-                purpose:
-                  advisorWorkflow === "recovery"
-                    ? "historical-event-context-not-damage-proof"
-                    : "historical-planning-context-not-event-evidence",
-              }
+              start: weather.start,
+              end: weather.end,
+              sourceUrl: weather.sourceUrl,
+              rainfallMm: weather.days.some((day) => day.rainfall === null)
+                ? null
+                : weather.days.reduce((sum, day) => sum + (day.rainfall ?? 0), 0),
+              missingDays: weather.days.filter(
+                (day) => day.rainfall === null || day.temperature === null,
+              ).length,
+              purpose:
+                advisorWorkflow === "recovery"
+                  ? "historical-event-context-not-damage-proof"
+                  : "historical-planning-context-not-event-evidence",
+            }
             : null,
           terrain: terrain
             ? {
-                elevation: terrain.elevation,
-                slopePercent: terrain.slopePercent,
-              }
+              elevation: terrain.elevation,
+              slopePercent: terrain.slopePercent,
+            }
             : undefined,
           rotationDetails: {
             strategyLabel: activeRotation.strategyLabel.slice(0, 280),
@@ -606,9 +613,9 @@ function FieldShift() {
               elevation: terrain?.elevation ?? null,
               ...(monthly
                 ? {
-                    monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
-                    monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
-                  }
+                  monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
+                  monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
+                }
                 : {}),
             });
             return {
@@ -668,92 +675,138 @@ function FieldShift() {
     chat: "Field advisor",
   };
 
+  const sharedRecoveryProps = {
+    onWeather: setEventWeather,
+    farm,
+    hazard,
+    setHazard: changeHazard,
+    damageDate,
+    setDamageDate: (value: string) => {
+      setDamageDate(value);
+      setEventWeather(null);
+    },
+    affected,
+    setAffected: (value: number) => {
+      setAssumptionsEdited(true);
+      setAffected(value);
+    },
+    yieldLoss,
+    setYieldLoss: (value: number) => {
+      setAssumptionsEdited(true);
+      setYieldLoss(value);
+    },
+    price,
+    setPrice: (value: string) => {
+      setAssumptionsEdited(true);
+      setPrice(value);
+    },
+    expectedYield,
+    setExpectedYield: (value: string) => {
+      setAssumptionsEdited(true);
+      setExpectedYield(value);
+    },
+    validLossInputs,
+    onUpdateFarm: updateFarm,
+    location,
+    photo,
+    pickPhoto,
+    uploadRef,
+    loss,
+    onPlan: () => {
+      if (page === "fullmap") {
+        setMapAdvisoryMode("rotation");
+        setAdvisorWorkflow("prevention");
+      } else {
+        goTo("prevention");
+      }
+    },
+    onChat: () => goTo("chat"),
+  };
+
+  const recoveryContent = (
+    <>
+      <section className="panel">
+        <h2>Current crop and event details</h2>
+        <p>
+          Optional farmer observations, not verified measurements. Blank fields stay
+          unknown. Loss assumptions:{" "}
+          {assumptionsEdited
+            ? "edited, unverified; unchanged values may still be samples"
+            : "sample defaults"}
+          .
+        </p>
+        <div className="form-grid">
+          <div className="form-field">
+            <Label htmlFor="actual-planting">Actual planting date of damaged crop</Label>
+            <Input
+              id="actual-planting"
+              type="date"
+              max={damageDate}
+              value={actualPlantingDate}
+              onChange={(e) => setActualPlantingDate(e.target.value)}
+            />
+          </div>
+          <div className="form-field">
+            <Label htmlFor="growth-stage">Observed growth stage</Label>
+            <Input
+              id="growth-stage"
+              maxLength={300}
+              placeholder="Unknown"
+              value={growthStage}
+              onChange={(e) => setGrowthStage(e.target.value)}
+            />
+          </div>
+          <div className="form-field">
+            <Label htmlFor="event-duration">Event duration (hours)</Label>
+            <Input
+              id="event-duration"
+              type="number"
+              min="0"
+              max="1000000000"
+              value={durationHours}
+              onChange={(e) => setDurationHours(e.target.value)}
+            />
+          </div>
+          <div className="form-field">
+            <Label htmlFor="event-observations">What did you observe?</Label>
+            <Textarea
+              id="event-observations"
+              maxLength={1200}
+              value={observations}
+              onChange={(e) => setObservations(e.target.value)}
+            />
+          </div>
+        </div>
+      </section>
+      <RecoveryPage {...sharedRecoveryProps} />
+    </>
+  );
+
+  const cardRecoveryContent = (
+    <RecoveryPage
+      {...sharedRecoveryProps}
+      embedStep={recoveryCardStep}
+      onContinueStep={() => setRecoveryCardStep(2)}
+      onBackStep={() => setRecoveryCardStep(1)}
+    />
+  );
+
   if (page === "landing") {
     return (
       <LandingPage
-        onLaunch={() => goTo("overview")}
-        onNavigate={(targetPage) => goTo(targetPage)}
+        onSelectMode={(mode) => {
+          setMapAdvisoryMode(mode);
+          setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
+          if (mode === "recovery") setRecoveryCardStep(1);
+          goTo("fullmap");
+        }}
       />
     );
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar" aria-hidden={isMobile ? "true" : undefined}>
-        <div
-          className="brand brand-clickable"
-          onClick={() => goTo("landing")}
-          role="button"
-          tabIndex={0}
-          title="Return to Home"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              goTo("landing");
-            }
-          }}
-        >
-          <div className="brand-mark">
-            <Sprout size={21} strokeWidth={1.8} />
-          </div>
-          <div>
-            <span className="brand-name">
-              <span className="brand-nasa">NASA</span><span className="brand-bukid">BUKID</span>
-            </span>
-            <span className="brand-caption">GROW WITH CONFIDENCE</span>
-          </div>
-        </div>
-        <div className="workspace-label">
-          YOUR FIELD DESK <ChevronDown size={14} />
-        </div>
-        <div className="sidebar-location">
-          <MapPin size={15} />
-          <div>
-            <strong>{farm.place}</strong>
-            <span>Selected farm reference</span>
-          </div>
-          <span className="location-dot" />
-        </div>
-        <nav className="main-nav" aria-label="Main navigation">
-          {NAV.map((item, index) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.id}>
-                {(index === 0 || NAV[index - 1]?.section !== item.section) && (
-                  <span className="nav-section">{item.section}</span>
-                )}
-                <button
-                  className={`nav-item ${page === item.id ? "nav-item-active" : ""}`}
-                  onClick={() => goTo(item.id)}
-                >
-                  <Icon size={17} strokeWidth={1.8} />
-                  <span>{item.label}</span>
-                  {item.id === "recovery" && <span className="nav-live-dot" />}
-                </button>
-              </div>
-            );
-          })}
-        </nav>
-        <div className="sidebar-foot">
-          <button
-            type="button"
-            className="sidebar-logout-btn"
-            onClick={() => goTo("landing")}
-            title="Log out and return to landing page"
-          >
-            <LogOut size={16} strokeWidth={1.8} />
-            <span>Log out</span>
-          </button>
-        </div>
-      </aside>
-
+    <div className="app-shell app-shell-no-sidebar">
       <main className="main-area">
-        <header className="topbar">
-          <div className="user-chip">
-            <span className="user-avatar">B</span>
-            <span className="user-name">Bukidnon grower</span>
-          </div>
-        </header>
         {page === "fullmap" ? (
           <FullFarmMap
             location={location}
@@ -763,7 +816,42 @@ function FieldShift() {
             areaLabel={farm.area}
             farm={farm}
             onUpdateFarm={updateFarm}
-            onContinue={() => goTo("prevention")}
+            onBrandClick={() => goTo("landing")}
+            advisoryMode={mapAdvisoryMode}
+            onAdvisoryModeChange={(mode) => {
+              setMapAdvisoryMode(mode);
+              setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
+            }}
+            hazard={hazard}
+            onHazardChange={changeHazard}
+            affected={affected}
+            onAffectedChange={(value) => {
+              setAssumptionsEdited(true);
+              setAffected(value);
+            }}
+            yieldLoss={yieldLoss}
+            onYieldLossChange={(value) => {
+              setAssumptionsEdited(true);
+              setYieldLoss(value);
+            }}
+            price={price}
+            onPriceChange={(value) => {
+              setAssumptionsEdited(true);
+              setPrice(value);
+            }}
+            expectedYield={expectedYield}
+            onExpectedYieldChange={(value) => {
+              setAssumptionsEdited(true);
+              setExpectedYield(value);
+            }}
+            damageDate={damageDate}
+            onDamageDateChange={(value) => {
+              setDamageDate(value);
+              setEventWeather(null);
+            }}
+            legacyRecoveryContent={recoveryContent}
+            cardRecoveryContent={cardRecoveryContent}
+            onOpenRecovery={() => setRecoveryCardStep(1)}
             historical={historical}
             climateLoading={climateLoading}
             terrain={terrain}
@@ -771,291 +859,214 @@ function FieldShift() {
             previousCropOptions={PREVIOUS_CROP_OPTIONS}
           />
         ) : (
-        <div className="page-wrap">
-          {page !== "overview" && page !== "chat" && (
-            <div className="page-intro">
-              <div>
-                <span className="eyebrow">
-                  <MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}
+          <div className="page-wrap">
+            <div className="glass-brand-row">
+              <button
+                type="button"
+                className="glass-brand-pill"
+                onClick={() => goTo(page === "overview" ? "landing" : "overview")}
+                title={page === "overview" ? "Return to Landing Page" : "Return to Overview"}
+              >
+                <span className="glass-brand-mark">
+                  <Sprout size={18} strokeWidth={2} />
                 </span>
-                <h1>{pageTitle[page]}</h1>
-                <p className="intro-copy">
-                  {page === "farm"
-                    ? "Set your location, boundary, and field details for customized recommendations."
-                    : page === "prevention"
-                      ? "Compare climate-ready crop rotation plans for your field."
-                      : page === "recovery"
-                        ? "Estimate potential crop loss and planning next steps."
-                        : page === "evidence"
-                          ? "Methodology and data sources behind rotation scores."
-                          : ""}
-                </p>
-              </div>
-              <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}>
-                <ArrowLeft size={16} /> Overview
-              </Button>
+                <span className="brand-name">
+                  <span className="brand-nasa">NASA</span>
+                  <span className="brand-bukid">BUKID</span>
+                </span>
+              </button>
             </div>
-          )}
-
-          {page === "overview" && (
-            <OverviewPage
-              farm={farm}
-              boundary={boundary}
-              location={location}
-              scenario={scenario}
-              rotationName={activeRotation.name}
-              hazard={hazard}
-              onLocationFound={(coords) => {
-                updateLocation(coords);
-              }}
-              onPlan={() => goTo("farm")}
-              onRecover={() => goTo("recovery")}
-              onPrevention={() => goTo("prevention")}
-              onChat={() => goTo("chat")}
-            />
-          )}
-          {page === "farm" && (
-            <FarmPage
-              farm={farm}
-              location={location}
-              boundary={boundary}
-              onBoundary={updateBoundary}
-              onLocation={updateLocation}
-              onUpdate={updateFarm}
-              onContinue={() => goTo("prevention")}
-            />
-          )}
-          {page === "prevention" && (
-            <>
-              <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
-              {historical && (
-                <div className="note-strip">
-                  <ShieldCheck size={16} />
-                  <span>
-                    Demo water context: actual NASA rainfall from {historical.start} to{" "}
-                    {historical.end}, using your planting month. Other ratings and thresholds remain
-                    illustrative. The charts above show the selected NASA year.
+            {page !== "overview" && page !== "chat" && (
+              <div className="page-intro">
+                <div>
+                  <span className="eyebrow">
+                    <MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}
                   </span>
-                  <button onClick={() => setHistorical(null)}>Clear historical context</button>
+                  <h1>{pageTitle[page]}</h1>
+                  <p className="intro-copy">
+                    {page === "farm"
+                      ? "Set your location, boundary, and field details for customized recommendations."
+                      : page === "prevention"
+                        ? "Compare climate-ready crop rotation plans for your field."
+                        : page === "recovery"
+                          ? "Estimate potential crop loss and planning next steps."
+                          : page === "evidence"
+                            ? "Methodology and data sources behind rotation scores."
+                            : ""}
+                  </p>
                 </div>
-              )}
-              <section className="panel">
-                <h2>Review before choosing a crop</h2>
-                <p>
-                  These are demo comparisons, not validated suitability decisions or yield
-                  forecasts. Income scores do not use production costs. Review every crop across its
-                  full growing season.
-                </p>
-                <ul>
-                  {planningReviewFlags(farm).map((flag) => (
-                    <li key={flag}>{flag}</li>
-                  ))}
-                </ul>
-              </section>
-              <PreventionPage
-                farm={farm}
-                setFarm={setFarm}
-                cropOptions={CROP_OPTIONS}
-                previousCropOptions={PREVIOUS_CROP_OPTIONS}
-                terrain={terrain}
-                historical={historical}
-                scenario={scenario}
-                setScenario={(next) => {
-                  setScenario(next);
-                  setHistorical(null);
-                }}
-                rotations={rotations}
-                selected={selectedRotation}
-                setSelected={setSelectedRotation}
-                onEvidence={(id) => {
-                  setEvidenceRotation(id);
-                  setEvidenceOpen(true);
-                }}
-                onChat={() => goTo("chat")}
-                onEvidencePage={() => goTo("evidence")}
-              />
-            </>
-          )}
-          {page === "recovery" && (
-            <>
-              <section className="panel">
-                <h2>Current crop and event details</h2>
-                <p>
-                  Optional farmer observations, not verified measurements. Blank fields stay
-                  unknown. Loss assumptions:{" "}
-                  {assumptionsEdited
-                    ? "edited, unverified; unchanged values may still be samples"
-                    : "sample defaults"}
-                  .
-                </p>
-                <div className="form-grid">
-                  <div className="form-field">
-                    <Label htmlFor="actual-planting">Actual planting date of damaged crop</Label>
-                    <Input
-                      id="actual-planting"
-                      type="date"
-                      max={damageDate}
-                      value={actualPlantingDate}
-                      onChange={(e) => setActualPlantingDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <Label htmlFor="growth-stage">Observed growth stage</Label>
-                    <Input
-                      id="growth-stage"
-                      maxLength={300}
-                      placeholder="Unknown"
-                      value={growthStage}
-                      onChange={(e) => setGrowthStage(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <Label htmlFor="event-duration">Event duration (hours)</Label>
-                    <Input
-                      id="event-duration"
-                      type="number"
-                      min="0"
-                      max="1000000000"
-                      value={durationHours}
-                      onChange={(e) => setDurationHours(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <Label htmlFor="event-observations">What did you observe?</Label>
-                    <Textarea
-                      id="event-observations"
-                      maxLength={1200}
-                      value={observations}
-                      onChange={(e) => setObservations(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </section>
-              <RecoveryPage
-                onWeather={setEventWeather}
-                farm={farm}
-                hazard={hazard}
-                setHazard={changeHazard}
-                damageDate={damageDate}
-                setDamageDate={(value) => {
-                  setDamageDate(value);
-                  setEventWeather(null);
-                }}
-                affected={affected}
-                setAffected={(value) => {
-                  setAssumptionsEdited(true);
-                  setAffected(value);
-                }}
-                yieldLoss={yieldLoss}
-                setYieldLoss={(value) => {
-                  setAssumptionsEdited(true);
-                  setYieldLoss(value);
-                }}
-                price={price}
-                setPrice={(value) => {
-                  setAssumptionsEdited(true);
-                  setPrice(value);
-                }}
-                expectedYield={expectedYield}
-                setExpectedYield={(value) => {
-                  setAssumptionsEdited(true);
-                  setExpectedYield(value);
-                }}
-                validLossInputs={validLossInputs}
-                onUpdateFarm={updateFarm}
-                location={location}
-                photo={photo}
-                pickPhoto={pickPhoto}
-                uploadRef={uploadRef}
-                loss={loss}
-                onPlan={() => goTo("prevention")}
-                onChat={() => goTo("chat")}
-              />
-            </>
-          )}
-          {page === "evidence" && (
-            <EvidencePage
-              rotations={rotations}
-              scenario={scenario}
-              selected={evidenceRotation}
-              setSelected={setEvidenceRotation}
-              onChat={() => goTo("chat")}
-            />
-          )}
-          {page === "chat" && (
-            <ChatPage
-              farm={farm}
-              messages={chatMessages}
-              busy={chatBusy}
-              input={chatInput}
-              setInput={setChatInput}
-              onSend={sendQuestion}
-              onSuggestion={sendQuestion}
-              scenario={scenario}
-              rotation={activeRotation.name}
-              hazard={hazard}
-              loss={lossLabel}
-              advisorWorkflow={advisorWorkflow}
-              setAdvisorWorkflow={setAdvisorWorkflow}
-            />
-          )}
-
-          {SHOW_API_SOURCES && <ApiSources />}
-          <footer className="page-footer">
-            <span>
-              <Sprout size={14} /> Made for the seasons ahead.
-            </span>
-            {SHOW_FOOTER_NASA_INFO && (
-              <span>
-                NASABUKID <span className="footer-divider">·</span> NASA Space Apps demo{" "}
-                <span className="footer-divider">·</span> Historical NASA access · Demo scores ·
-                Gemini advisor
-              </span>
+                <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}>
+                  <ArrowLeft size={16} /> Overview
+                </Button>
+              </div>
             )}
-          </footer>
-        </div>
+
+            {page === "overview" && (
+              <OverviewPage
+                farm={farm}
+                boundary={boundary}
+                location={location}
+                scenario={scenario}
+                rotationName={activeRotation.name}
+                hazard={hazard}
+                onLocationFound={(coords) => {
+                  updateLocation(coords);
+                }}
+                onPlan={() => goTo("farm")}
+                onFullMap={() => goTo("fullmap")}
+                onRecover={() => goTo("recovery")}
+                onPrevention={() => goTo("prevention")}
+                onChat={() => goTo("chat")}
+              />
+            )}
+            {page === "farm" && (
+              <FarmPage
+                farm={farm}
+                location={location}
+                boundary={boundary}
+                onBoundary={updateBoundary}
+                onLocation={updateLocation}
+                onUpdate={updateFarm}
+                onContinue={() => goTo("prevention")}
+              />
+            )}
+            {page === "prevention" && (
+              <>
+                <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
+                {historical && (
+                  <div className="note-strip">
+                    <ShieldCheck size={16} />
+                    <span>
+                      Demo water context: actual NASA rainfall from {historical.start} to{" "}
+                      {historical.end}, using your planting month. Other ratings and thresholds remain
+                      illustrative. The charts above show the selected NASA year.
+                    </span>
+                    <button onClick={() => setHistorical(null)}>Clear historical context</button>
+                  </div>
+                )}
+                <section className="panel">
+                  <h2>Review before choosing a crop</h2>
+                  <p>
+                    These are demo comparisons, not validated suitability decisions or yield
+                    forecasts. Income scores do not use production costs. Review every crop across its
+                    full growing season.
+                  </p>
+                  <ul>
+                    {planningReviewFlags(farm).map((flag) => (
+                      <li key={flag}>{flag}</li>
+                    ))}
+                  </ul>
+                </section>
+                <PreventionPage
+                  farm={farm}
+                  setFarm={setFarm}
+                  cropOptions={CROP_OPTIONS}
+                  previousCropOptions={PREVIOUS_CROP_OPTIONS}
+                  terrain={terrain}
+                  historical={historical}
+                  scenario={scenario}
+                  setScenario={(next) => {
+                    setScenario(next);
+                    setHistorical(null);
+                  }}
+                  rotations={rotations}
+                  selected={selectedRotation}
+                  setSelected={setSelectedRotation}
+                  onEvidence={(id) => {
+                    setEvidenceRotation(id);
+                    setEvidenceOpen(true);
+                  }}
+                  onChat={() => goTo("chat")}
+                  onEvidencePage={() => goTo("evidence")}
+                />
+              </>
+            )}
+            {page === "recovery" && recoveryContent}
+            {page === "evidence" && (
+              <EvidencePage
+                rotations={rotations}
+                scenario={scenario}
+                selected={evidenceRotation}
+                setSelected={setEvidenceRotation}
+                onChat={() => goTo("chat")}
+              />
+            )}
+            {page === "chat" && (
+              <ChatPage
+                farm={farm}
+                messages={chatMessages}
+                busy={chatBusy}
+                input={chatInput}
+                setInput={setChatInput}
+                onSend={sendQuestion}
+                onSuggestion={sendQuestion}
+                scenario={scenario}
+                rotation={activeRotation.name}
+                hazard={hazard}
+                loss={lossLabel}
+                advisorWorkflow={advisorWorkflow}
+                setAdvisorWorkflow={setAdvisorWorkflow}
+              />
+            )}
+
+            {SHOW_API_SOURCES && <ApiSources />}
+            <footer className="page-footer">
+              <span>
+                <Sprout size={14} /> Made for the seasons ahead.
+              </span>
+              {SHOW_FOOTER_NASA_INFO && (
+                <span>
+                  NASABUKID <span className="footer-divider">·</span> NASA Space Apps demo{" "}
+                  <span className="footer-divider">·</span> Historical NASA access · Demo scores ·
+                  Gemini advisor
+                </span>
+              )}
+            </footer>
+          </div>
         )}
         <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
 
-        <nav
-          className="bottom-nav-dock"
-          aria-label="Mobile navigation"
-          aria-hidden={!isMobile ? "true" : undefined}
-        >
-          {NAV.filter((item) => item.id !== "evidence").map((item) => {
-            const Icon = item.icon;
-            const isActive = page === item.id;
-            if (item.isCenter) {
+        {false && (
+          <nav
+            className="bottom-nav-dock"
+            aria-label="Mobile navigation"
+            aria-hidden={!isMobile ? "true" : undefined}
+          >
+            {NAV.filter((item) => item.id !== "evidence").map((item) => {
+              const Icon = item.icon;
+              const isActive = page === item.id;
+              if (item.isCenter) {
+                return (
+                  <button
+                    key={item.id}
+                    className={`bottom-nav-item bottom-nav-center ${isActive ? "bottom-nav-center-active" : ""}`}
+                    aria-label={item.label}
+                    onClick={() => goTo(item.id)}
+                  >
+                    <span className="center-icon-wrap">
+                      <Icon size={22} strokeWidth={2.4} />
+                    </span>
+                    <span className="bottom-nav-label">{item.label}</span>
+                  </button>
+                );
+              }
               return (
                 <button
                   key={item.id}
-                  className={`bottom-nav-item bottom-nav-center ${isActive ? "bottom-nav-center-active" : ""}`}
+                  className={`bottom-nav-item ${isActive ? "bottom-nav-active" : ""}`}
                   aria-label={item.label}
                   onClick={() => goTo(item.id)}
                 >
-                  <span className="center-icon-wrap">
-                    <Icon size={22} strokeWidth={2.4} />
+                  <span className="bottom-nav-icon">
+                    <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                    {item.id === "recovery" && <span className="nav-live-dot" />}
                   </span>
                   <span className="bottom-nav-label">{item.label}</span>
                 </button>
               );
-            }
-            return (
-              <button
-                key={item.id}
-                className={`bottom-nav-item ${isActive ? "bottom-nav-active" : ""}`}
-                aria-label={item.label}
-                onClick={() => goTo(item.id)}
-              >
-                <span className="bottom-nav-icon">
-                  <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
-                  {item.id === "recovery" && <span className="nav-live-dot" />}
-                </span>
-                <span className="bottom-nav-label">{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+            })}
+          </nav>
+        )}
       </main>
 
       <Dialog open={evidenceOpen} onOpenChange={setEvidenceOpen}>
@@ -1101,188 +1112,80 @@ function FieldShift() {
 }
 
 function LandingPage({
-  onLaunch,
-  onNavigate,
+  onSelectMode,
 }: {
-  onLaunch: () => void;
-  onNavigate: (page: Page) => void;
+  onSelectMode: (mode: "rotation" | "recovery") => void;
 }) {
   return (
     <div className="landing-root">
-      {/* Top Navigation */}
-      <header className="landing-header">
-        <div className="landing-header-inner">
-          <div
-            className="landing-brand"
-            onClick={onLaunch}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onLaunch();
-              }
-            }}
-          >
-            <div className="brand-mark">
-              <Sprout size={20} strokeWidth={2} />
-            </div>
-            <span className="brand-name">
-              <span className="brand-nasa">NASA</span><span className="brand-bukid">BUKID</span>
-            </span>
-          </div>
-        </div>
-      </header>
+      <div className="landing-ambient-glow" aria-hidden="true" />
+      <div className="landing-ambient-grid" aria-hidden="true" />
 
-      {/* Hero Section */}
-      <section
-        className="landing-hero-section landing-hero-photo"
-        style={{ backgroundImage: `url(${heroFarmland})` }}
-      >
-        <div className="landing-hero-content">
-          <div className="landing-badge">
-            <span className="landing-badge-dot" />
-            <Sparkles size={13} />
-            <span>Bukidnon Agriculture · Climate-Ready Farm Guide</span>
+      <main className="landing-center-stage">
+        <div className="landing-brand-lockup">
+          <div className="landing-emblem" aria-hidden="true">
+            <svg viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="42" cy="42" r="37" stroke="#F4C44E" strokeWidth="2.75" />
+              <circle cx="42" cy="34" r="10.5" fill="#FACC5B" />
+              <path
+                d="M42 40V60"
+                stroke="#6EE7B7"
+                strokeWidth="3.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M42 50C42 42 33 36 25 36.5C25.5 45 33 51.5 42 50Z"
+                fill="#86EFAC"
+              />
+              <path
+                d="M42 47C42 39 51 33 59 33.5C58.5 42 51 48.5 42 47Z"
+                fill="#6EE7B7"
+              />
+            </svg>
           </div>
 
-          <h1 className="landing-hero-title">
-            Smart crop planning for Bukidnon farmers.
+          <h1 className="landing-title">
+            <span className="landing-title-nasa">NASA</span>
+            <span className="landing-title-bukid">Bukid</span>
           </h1>
-
-          <p className="landing-hero-subtitle">
-            Plan what to plant next, check your local rainfall and soil, and protect your harvest
-            from dry spells and heavy rains using satellite weather and proven crop rotations.
-          </p>
-
-          <div className="landing-hero-ctas">
-            <Button size="lg" className="landing-cta-primary" onClick={onLaunch}>
-              <span>Open Field Desk</span>
-              <ArrowRight size={19} />
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      {/* Core Features Bento Grid */}
-      <section className="landing-features-section">
-        <div className="landing-section-head">
-          <span className="section-eyebrow">PRACTICAL FARM TOOLS</span>
-          <h2>Simple guides made for your field</h2>
-          <p>Easy-to-use tools to help you decide what to plant, check damage, and safeguard your farm income.</p>
         </div>
 
-        <div className="landing-features-grid">
-          <div className="landing-feature-card">
-            <div className="feature-card-icon map-icon">
-              <MapIcon size={24} />
-            </div>
-            <span className="feature-category">MY FARM</span>
-            <h3>Field Profile & Soil</h3>
-            <p>Select your municipality in Bukidnon to see your soil texture, pH estimate, and historical rainfall patterns.</p>
-            <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("farm")}>
-              <span>Open My Farm</span>
-              <ChevronRight size={15} />
-            </Button>
-          </div>
+        <p className="landing-tagline">
+          Bukidnon satellite field intelligence for seasonal crop planning &amp; post-disaster farm recovery.
+        </p>
 
-          <div className="landing-feature-card featured-card">
-            <div className="feature-card-icon crop-icon">
-              <Wheat size={24} />
-            </div>
-            <span className="feature-category">CROP ROTATION</span>
-            <h3>What to Plant Next</h3>
-            <p>Compare proven 3-crop sequences scored for soil health, water demand, and resilience through dry or wet seasons.</p>
-            <Button className="feature-card-btn primary" onClick={() => onNavigate("prevention")}>
-              <span>Plan Rotations</span>
-              <ChevronRight size={15} />
-            </Button>
-          </div>
-
-          <div className="landing-feature-card">
-            <div className="feature-card-icon recovery-icon">
-              <HeartHandshake size={24} />
-            </div>
-            <span className="feature-category">DAMAGE RECOVERY</span>
-            <h3>Storm & Flood Check</h3>
-            <p>Estimate harvest revenue at risk after floods or storms and find quick-growing replanting options to recover faster.</p>
-            <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("recovery")}>
-              <span>Check Damage</span>
-              <ChevronRight size={15} />
-            </Button>
-          </div>
-
-          <div className="landing-feature-card">
-            <div className="feature-card-icon advisor-icon">
-              <MessageCircle size={24} />
-            </div>
-            <span className="feature-category">FARM GUIDE</span>
-            <h3>Field Advisor</h3>
-            <p>Ask straightforward questions about planting dates, soil drainage, and weather conditions for your farm.</p>
-            <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("chat")}>
-              <span>Ask Advisor</span>
-              <ChevronRight size={15} />
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      {/* How it Works Section */}
-      <section className="landing-steps-section">
-        <div className="landing-section-head">
-          <span className="section-eyebrow">HOW IT WORKS</span>
-          <h2>Simple 3-step planting guide</h2>
-        </div>
-
-        <div className="landing-steps-grid">
-          <div className="landing-step-card">
-            <div className="step-number">01</div>
-            <h4>Select Your Location</h4>
-            <p>Pick your Bukidnon municipality to load local weather and soil conditions.</p>
-          </div>
-          <div className="landing-step-card">
-            <div className="step-number">02</div>
-            <h4>Check Upcoming Weather</h4>
-            <p>Choose whether you are preparing for typical weather, dry spells, or heavy rain.</p>
-          </div>
-          <div className="landing-step-card">
-            <div className="step-number">03</div>
-            <h4>Get Your Crop Plan</h4>
-            <p>See recommended crop sequences that protect your soil and farm income.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Final Call to Action */}
-      <section className="landing-cta-banner">
-        <div className="cta-banner-card">
-          <div className="cta-banner-content">
-            <Sprout size={32} className="cta-sprout-icon" />
-            <h2>Ready to plan your next planting?</h2>
-            <p>Explore climate-smart crop rotations, weather insights, and damage recovery tools for Bukidnon.</p>
-            <Button size="lg" className="cta-banner-btn" onClick={onLaunch}>
-              <span>Open Field Desk</span>
-              <ArrowRight size={18} />
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      {/* Landing Footer */}
-      <footer className="landing-footer">
-        <div className="landing-footer-inner">
-          <div className="landing-footer-brand">
-            <span className="brand-name">
-              <span className="brand-nasa">NASA</span><span className="brand-bukid">BUKID</span>
+        <div className="landing-mode-actions" role="group" aria-label="Choose workspace mode">
+          <button
+            type="button"
+            className="landing-mode-btn is-rotation"
+            onClick={() => onSelectMode("rotation")}
+          >
+            <span className="landing-mode-icon">
+              <Sprout size={20} strokeWidth={2.1} />
             </span>
-            <p>Climate-ready crop planning and recovery intelligence for Bukidnon, Philippines.</p>
-          </div>
-          <div className="landing-footer-meta">
-            <span>NASA Space Apps Challenge 2026 demo</span>
-            <span>Historical NASA POWER satellite access · Demo calculations · Gemini advisor</span>
-          </div>
+            <span className="landing-mode-copy">
+              <strong>Crop Rotation</strong>
+              <small>Next-season plans &amp; soil health</small>
+            </span>
+            <ArrowRight size={17} className="landing-mode-arrow" />
+          </button>
+
+          <button
+            type="button"
+            className="landing-mode-btn is-recovery"
+            onClick={() => onSelectMode("recovery")}
+          >
+            <span className="landing-mode-icon">
+              <ShieldAlert size={20} strokeWidth={2.1} />
+            </span>
+            <span className="landing-mode-copy">
+              <strong>Disaster Recovery</strong>
+              <small>Storm check, loss estimate &amp; replanting</small>
+            </span>
+            <ArrowRight size={17} className="landing-mode-arrow" />
+          </button>
         </div>
-      </footer>
+      </main>
     </div>
   );
 }
@@ -1308,6 +1211,7 @@ function OverviewPage({
   hazard,
   onLocationFound,
   onPlan,
+  onFullMap,
   onRecover,
   onPrevention,
   onChat,
@@ -1320,6 +1224,7 @@ function OverviewPage({
   hazard: Hazard;
   onLocationFound: (coords: Coordinates) => void;
   onPlan: () => void;
+  onFullMap: () => void;
   onRecover: () => void;
   onPrevention: () => void;
   onChat: () => void;
@@ -1343,11 +1248,11 @@ function OverviewPage({
 
       {/* Quick Actions Row */}
       <div className="agri-quick-actions">
-        <Button size="lg" className="agri-btn-primary" onClick={onPlan}>
-          <MapPin size={18} /> Set up my farm
+        <Button size="lg" className="agri-btn-primary" onClick={onFullMap}>
+          <MapIcon size={18} /> Open Full Map
         </Button>
-        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onRecover}>
-          <HeartHandshake size={18} /> Check crop damage
+        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onPlan}>
+          <MapPin size={18} /> Set up my farm
         </Button>
       </div>
 
@@ -1438,35 +1343,37 @@ function OverviewPage({
             </div>
           </button>
 
-          <button type="button" className="agri-field-card" onClick={onRecover}>
-            <div className="agri-card-media">
-              <img src={floodCorn} alt="Bukidnon flood recovery field" />
-              <span className="agri-bookmark-btn" aria-hidden="true">
-                <HeartHandshake size={16} />
-              </span>
-            </div>
-            <div className="agri-card-info">
-              <div className="agri-card-header-row">
-                <div className="agri-card-tags">
-                  <span className="agri-tag tag-coral">
-                    <HeartHandshake size={12} aria-hidden="true" /> Damage Recovery
-                  </span>
-                  <span className="agri-scenario-chip chip-coral">{hazard}</span>
-                </div>
-              </div>
-              <h3 className="agri-card-title">Estimate storm damage</h3>
-              <p className="agri-card-copy">
-                Work out crop loss from rainfall and field reports, then plan the next step.
-              </p>
-              <div className="agri-card-foot">
-                <span className="agri-card-status">Open damage check</span>
-                <span className="agri-action-pill pill-coral">
-                  <span>Assess</span>
-                  <ArrowRight size={13} aria-hidden="true" />
+          {false && (
+            <button type="button" className="agri-field-card" onClick={onRecover}>
+              <div className="agri-card-media">
+                <img src={floodCorn} alt="Bukidnon flood recovery field" />
+                <span className="agri-bookmark-btn" aria-hidden="true">
+                  <HeartHandshake size={16} />
                 </span>
               </div>
-            </div>
-          </button>
+              <div className="agri-card-info">
+                <div className="agri-card-header-row">
+                  <div className="agri-card-tags">
+                    <span className="agri-tag tag-coral">
+                      <HeartHandshake size={12} aria-hidden="true" /> Damage Recovery
+                    </span>
+                    <span className="agri-scenario-chip chip-coral">{hazard}</span>
+                  </div>
+                </div>
+                <h3 className="agri-card-title">Estimate storm damage</h3>
+                <p className="agri-card-copy">
+                  Work out crop loss from rainfall and field reports, then plan the next step.
+                </p>
+                <div className="agri-card-foot">
+                  <span className="agri-card-status">Open damage check</span>
+                  <span className="agri-action-pill pill-coral">
+                    <span>Assess</span>
+                    <ArrowRight size={13} aria-hidden="true" />
+                  </span>
+                </div>
+              </div>
+            </button>
+          )}
         </div>
       </section>
     </div>
@@ -1723,9 +1630,9 @@ function PreventionPage({
     elevation: terrain?.elevation ?? null,
     ...(monthly
       ? {
-          monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
-          monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
-        }
+        monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
+        monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
+      }
       : {}),
   });
 
@@ -2063,6 +1970,9 @@ function RecoveryPage({
   validLossInputs,
   location,
   onUpdateFarm,
+  embedStep,
+  onContinueStep,
+  onBackStep,
 }: {
   onWeather: (weather: HistoricalWeather | null) => void;
   onUpdateFarm: (key: keyof Farm, value: string) => void;
@@ -2087,121 +1997,293 @@ function RecoveryPage({
   loss: number;
   onPlan: () => void;
   onChat: () => void;
+  embedStep?: 1 | 2;
+  onContinueStep?: () => void;
+  onBackStep?: () => void;
 }) {
   const HazardIcon = HAZARD_RATES[hazard].icon;
+  const stepOnePanel = (
+    <section className="panel recovery-form-panel">
+      <div className="panel-top">
+        <div>
+          <span className="panel-eyebrow">
+            <HeartHandshake size={13} /> FIRST, A FEW DETAILS{" "}
+            <span className="panel-demotag">DEMO</span>
+          </span>
+          <h2>Tell us about the event.</h2>
+        </div>
+        <span className="step-number">
+          01 <span>/ {embedStep ? "02" : "03"}</span>
+        </span>
+      </div>
+      <Label className="form-section-label">What happened?</Label>
+      <div className="hazard-options">
+        {(Object.keys(HAZARD_RATES) as Hazard[]).map((value) => {
+          const Icon = HAZARD_RATES[value].icon;
+          return (
+            <button
+              className={`hazard-option ${hazard === value ? "hazard-selected" : ""}`}
+              key={value}
+              aria-pressed={hazard === value}
+              onClick={() => setHazard(value)}
+            >
+              <Icon size={17} />
+              <span>{value}</span>
+              {hazard === value && <Check size={13} className="hazard-check" />}
+            </button>
+          );
+        })}
+      </div>
+      <div className="form-grid recovery-fields">
+        <div className="form-field">
+          <Label htmlFor="damage-date">When did it happen?</Label>
+          <Input
+            id="damage-date"
+            type="date"
+            value={damageDate}
+            onChange={(e) => setDamageDate(e.target.value)}
+          />
+        </div>
+        <div className="form-field">
+          <Label htmlFor="recovery-area">Farm area (ha)</Label>
+          <Input
+            id="recovery-area"
+            type="number"
+            min="0"
+            step="any"
+            value={farm.area}
+            onChange={(e) => onUpdateFarm("area", e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="photo-heading">
+        <div>
+          <Label>
+            Crop photo <span className="optional-label">OPTIONAL</span>
+          </Label>
+          <span className="photo-caption">
+            Add a photo or explore using the labeled sample.
+          </span>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
+          <Upload size={14} /> Add a photo
+        </Button>
+        <input
+          ref={uploadRef}
+          className="sr-only"
+          type="file"
+          accept="image/*"
+          aria-label="Upload crop photo"
+          onChange={(event) => pickPhoto(event.target.files?.[0])}
+        />
+      </div>
+      <button
+        className="photo-preview"
+        onClick={() => uploadRef.current?.click()}
+        aria-label="Choose a crop photo"
+      >
+        <img
+          src={photo.src}
+          alt={
+            photo.sample
+              ? "Sample farm crop in waterlogged soil"
+              : "Farmer-uploaded crop photo; not analyzed"
+          }
+        />
+        <span className="photo-badge">
+          <ImagePlus size={12} /> {photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
+        </span>
+        <span className="photo-overlay">
+          <span>
+            <Upload size={16} /> Change photo
+          </span>
+        </span>
+      </button>
+      <span className="file-caption">
+        {photo.name} <span>· Image preview stays in this browser only</span>
+      </span>
+      <div className="observations">
+        <div className="observation-head">
+          <span>
+            <BadgeCheck size={14} /> SAMPLE OBSERVATIONS
+          </span>
+          <span>NOT AI-ANALYZED</span>
+        </div>
+        <p>{HAZARD_RATES[hazard].observation}</p>
+      </div>
+      {embedStep === 1 && onContinueStep && (
+        <Button
+          type="button"
+          className="drawer-recovery-continue-btn"
+          onClick={onContinueStep}
+        >
+          <span>Continue</span>
+          <ArrowRight size={15} />
+        </Button>
+      )}
+    </section>
+  );
+
+  const stepTwoPanel = (
+    <section className="panel loss-panel">
+      <div className="panel-top">
+        <div>
+          <span className="panel-eyebrow">
+            <BarChart3 size={13} /> PLANNING ESTIMATE{" "}
+            <span className="panel-demotag">DEMO</span>
+          </span>
+          <h2>A starting point, not a verdict.</h2>
+        </div>
+        <span className="step-number">
+          02 <span>/ {embedStep ? "02" : "03"}</span>
+        </span>
+      </div>
+      <div className="form-grid loss-assumptions">
+        <div className="form-field">
+          <Label htmlFor="yield-assumption">Expected yield (kg/ha)</Label>
+          <Input
+            id="yield-assumption"
+            type="number"
+            min="0"
+            step="any"
+            value={expectedYield}
+            onChange={(event) => setExpectedYield(event.target.value)}
+          />
+        </div>
+        <div className="form-field">
+          <Label htmlFor="price-assumption">Farmgate price (₱/kg)</Label>
+          <Input
+            id="price-assumption"
+            type="number"
+            min="0"
+            step="any"
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+          />
+        </div>
+      </div>
+      <p className="historical-copy">
+        Defaults are sample corn assumptions. Enter crop-specific yield and price for{" "}
+        {farm.crop}. Gross revenue at risk excludes costs and insurance.
+      </p>
+      <RangeField
+        id="affected-area"
+        label="Area affected"
+        value={affected}
+        setValue={setAffected}
+        help="Share of total farm area"
+      />
+      <RangeField
+        id="yield-loss"
+        label="Expected yield loss on affected area"
+        value={yieldLoss}
+        setValue={setYieldLoss}
+        help="Illustrative estimate"
+      />
+      <div className="calculation-box">
+        <span className="calculation-title">
+          <span /> GROSS REVENUE AT RISK
+        </span>
+        <div className="calculation-total">
+          {validLossInputs ? PHP.format(loss) : "Enter valid assumptions"} <span>PHP</span>
+        </div>
+        <div className="calculation-equation">
+          <span>{farm.area} ha</span>
+          <i>×</i>
+          <span>{affected}%</span>
+          <i>×</i>
+          <span>{Number(expectedYield).toLocaleString()} kg/ha</span>
+          <i>×</i>
+          <span>{yieldLoss}%</span>
+          <i>×</i>
+          <span>₱{price}/kg</span>
+        </div>
+        <div className="calculation-foot">
+          Farm area × affected share × entered yield × yield-loss fraction × entered price.
+          Figures are editable planning assumptions, not a verified claim.
+        </div>
+      </div>
+      <div className="next-steps-label">
+        <ShieldCheck size={15} /> POSSIBLE NEXT STEPS
+      </div>
+      <div className="next-steps">
+        {RECOVERY_STEPS[hazard].map((step, index) => (
+          <span key={step}>
+            <span>{index + 1}</span>
+            {step}
+          </span>
+        ))}
+      </div>
+      <div className="form-grid loss-assumptions">
+        <div className="form-field">
+          <Label htmlFor="recovery-plant-date">Planned next planting</Label>
+          <Input
+            id="recovery-plant-date"
+            type="date"
+            min={damageDate}
+            value={farm.planted}
+            onChange={(event) => onUpdateFarm("planted", event.target.value)}
+          />
+        </div>
+        <div className="form-field">
+          <Label htmlFor="recovery-drainage">Current field drainage</Label>
+          <select
+            id="recovery-drainage"
+            className="form-select"
+            value={farm.drainage}
+            onChange={(event) => onUpdateFarm("drainage", event.target.value)}
+          >
+            {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <p className="historical-copy">
+        These farmer-reported inputs update the same profile and demo comparison used in
+        prevention. Confirm field readiness before planting.
+      </p>
+      <div className="recovery-actions">
+        {embedStep === 2 && onBackStep && (
+          <Button type="button" variant="outline" onClick={onBackStep}>
+            <ArrowLeft size={14} /> Back
+          </Button>
+        )}
+        <Button disabled={!farm.planted || farm.planted < damageDate} onClick={onPlan}>
+          Compare next-season options <ArrowRight size={15} />
+        </Button>
+        {!embedStep && (
+          <Button variant="ghost" onClick={onChat}>
+            <MessageCircle size={15} /> Talk it through
+          </Button>
+        )}
+      </div>
+      {!embedStep && (
+        <span className="step-number recovery-step">
+          03 <span>/ 03</span> <span>YOUR NEXT SEASON</span>
+        </span>
+      )}
+    </section>
+  );
+
+  if (embedStep === 1) {
+    return (
+      <div key="recovery-step-1" className="recovery-slide-stage is-enter-left">
+        {stepOnePanel}
+      </div>
+    );
+  }
+  if (embedStep === 2) {
+    return (
+      <div key="recovery-step-2" className="recovery-slide-stage is-enter-right">
+        {stepTwoPanel}
+      </div>
+    );
+  }
+
   return (
     <div className="recovery-layout">
-      <div className="recovery-left">
-        <section className="panel recovery-form-panel">
-          <div className="panel-top">
-            <div>
-              <span className="panel-eyebrow">
-                <HeartHandshake size={13} /> FIRST, A FEW DETAILS{" "}
-                <span className="panel-demotag">DEMO</span>
-              </span>
-              <h2>Tell us about the event.</h2>
-            </div>
-            <span className="step-number">
-              01 <span>/ 03</span>
-            </span>
-          </div>
-          <Label className="form-section-label">What happened?</Label>
-          <div className="hazard-options">
-            {(Object.keys(HAZARD_RATES) as Hazard[]).map((value) => {
-              const Icon = HAZARD_RATES[value].icon;
-              return (
-                <button
-                  className={`hazard-option ${hazard === value ? "hazard-selected" : ""}`}
-                  key={value}
-                  aria-pressed={hazard === value}
-                  onClick={() => setHazard(value)}
-                >
-                  <Icon size={17} />
-                  <span>{value}</span>
-                  {hazard === value && <Check size={13} className="hazard-check" />}
-                </button>
-              );
-            })}
-          </div>
-          <div className="form-grid recovery-fields">
-            <div className="form-field">
-              <Label htmlFor="damage-date">When did it happen?</Label>
-              <Input
-                id="damage-date"
-                type="date"
-                value={damageDate}
-                onChange={(e) => setDamageDate(e.target.value)}
-              />
-            </div>
-            <div className="form-field">
-              <Label htmlFor="recovery-area">Farm area (ha)</Label>
-              <Input
-                id="recovery-area"
-                type="number"
-                min="0"
-                step="any"
-                value={farm.area}
-                onChange={(e) => onUpdateFarm("area", e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="photo-heading">
-            <div>
-              <Label>
-                Crop photo <span className="optional-label">OPTIONAL</span>
-              </Label>
-              <span className="photo-caption">
-                Add a photo or explore using the labeled sample.
-              </span>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
-              <Upload size={14} /> Add a photo
-            </Button>
-            <input
-              ref={uploadRef}
-              className="sr-only"
-              type="file"
-              accept="image/*"
-              aria-label="Upload crop photo"
-              onChange={(event) => pickPhoto(event.target.files?.[0])}
-            />
-          </div>
-          <button
-            className="photo-preview"
-            onClick={() => uploadRef.current?.click()}
-            aria-label="Choose a crop photo"
-          >
-            <img
-              src={photo.src}
-              alt={
-                photo.sample
-                  ? "Sample farm crop in waterlogged soil"
-                  : "Farmer-uploaded crop photo; not analyzed"
-              }
-            />
-            <span className="photo-badge">
-              <ImagePlus size={12} /> {photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
-            </span>
-            <span className="photo-overlay">
-              <span>
-                <Upload size={16} /> Change photo
-              </span>
-            </span>
-          </button>
-          <span className="file-caption">
-            {photo.name} <span>· Image preview stays in this browser only</span>
-          </span>
-          <div className="observations">
-            <div className="observation-head">
-              <span>
-                <BadgeCheck size={14} /> SAMPLE OBSERVATIONS
-              </span>
-              <span>NOT AI-ANALYZED</span>
-            </div>
-            <p>{HAZARD_RATES[hazard].observation}</p>
-          </div>
-        </section>
-      </div>
+      <div className="recovery-left">{stepOnePanel}</div>
       <aside className="recovery-right">
         <HistoricalWeatherPanel
           key={`${location.latitude}:${location.longitude}:${damageDate}`}
@@ -2209,136 +2291,7 @@ function RecoveryPage({
           eventDate={damageDate}
           onLoaded={onWeather}
         />
-        <section className="panel loss-panel">
-          <div className="panel-top">
-            <div>
-              <span className="panel-eyebrow">
-                <BarChart3 size={13} /> PLANNING ESTIMATE{" "}
-                <span className="panel-demotag">DEMO</span>
-              </span>
-              <h2>A starting point, not a verdict.</h2>
-            </div>
-            <span className="step-number">
-              02 <span>/ 03</span>
-            </span>
-          </div>
-          <div className="form-grid loss-assumptions">
-            <div className="form-field">
-              <Label htmlFor="yield-assumption">Expected yield (kg/ha)</Label>
-              <Input
-                id="yield-assumption"
-                type="number"
-                min="0"
-                step="any"
-                value={expectedYield}
-                onChange={(event) => setExpectedYield(event.target.value)}
-              />
-            </div>
-            <div className="form-field">
-              <Label htmlFor="price-assumption">Farmgate price (₱/kg)</Label>
-              <Input
-                id="price-assumption"
-                type="number"
-                min="0"
-                step="any"
-                value={price}
-                onChange={(event) => setPrice(event.target.value)}
-              />
-            </div>
-          </div>
-          <p className="historical-copy">
-            Defaults are sample corn assumptions. Enter crop-specific yield and price for{" "}
-            {farm.crop}. Gross revenue at risk excludes costs and insurance.
-          </p>
-          <RangeField
-            id="affected-area"
-            label="Area affected"
-            value={affected}
-            setValue={setAffected}
-            help="Share of total farm area"
-          />
-          <RangeField
-            id="yield-loss"
-            label="Expected yield loss on affected area"
-            value={yieldLoss}
-            setValue={setYieldLoss}
-            help="Illustrative estimate"
-          />
-          <div className="calculation-box">
-            <span className="calculation-title">
-              <span /> GROSS REVENUE AT RISK
-            </span>
-            <div className="calculation-total">
-              {validLossInputs ? PHP.format(loss) : "Enter valid assumptions"} <span>PHP</span>
-            </div>
-            <div className="calculation-equation">
-              <span>{farm.area} ha</span>
-              <i>×</i>
-              <span>{affected}%</span>
-              <i>×</i>
-              <span>{Number(expectedYield).toLocaleString()} kg/ha</span>
-              <i>×</i>
-              <span>{yieldLoss}%</span>
-              <i>×</i>
-              <span>₱{price}/kg</span>
-            </div>
-            <div className="calculation-foot">
-              Farm area × affected share × entered yield × yield-loss fraction × entered price.
-              Figures are editable planning assumptions, not a verified claim.
-            </div>
-          </div>
-          <div className="next-steps-label">
-            <ShieldCheck size={15} /> POSSIBLE NEXT STEPS
-          </div>
-          <div className="next-steps">
-            {RECOVERY_STEPS[hazard].map((step, index) => (
-              <span key={step}>
-                <span>{index + 1}</span>
-                {step}
-              </span>
-            ))}
-          </div>
-          <div className="form-grid loss-assumptions">
-            <div className="form-field">
-              <Label htmlFor="recovery-plant-date">Planned next planting</Label>
-              <Input
-                id="recovery-plant-date"
-                type="date"
-                min={damageDate}
-                value={farm.planted}
-                onChange={(event) => onUpdateFarm("planted", event.target.value)}
-              />
-            </div>
-            <div className="form-field">
-              <Label htmlFor="recovery-drainage">Current field drainage</Label>
-              <select
-                id="recovery-drainage"
-                className="form-select"
-                value={farm.drainage}
-                onChange={(event) => onUpdateFarm("drainage", event.target.value)}
-              >
-                {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <p className="historical-copy">
-            These farmer-reported inputs update the same profile and demo comparison used in
-            prevention. Confirm field readiness before planting.
-          </p>
-          <div className="recovery-actions">
-            <Button disabled={!farm.planted || farm.planted < damageDate} onClick={onPlan}>
-              Compare next-season options <ArrowRight size={15} />
-            </Button>
-            <Button variant="ghost" onClick={onChat}>
-              <MessageCircle size={15} /> Talk it through
-            </Button>
-          </div>
-          <span className="step-number recovery-step">
-            03 <span>/ 03</span> <span>YOUR NEXT SEASON</span>
-          </span>
-        </section>
+        {stepTwoPanel}
       </aside>
       <div className="recovery-disclaimer">
         <HazardIcon size={15} />
@@ -2844,11 +2797,11 @@ function ScoreBreakdown({
     label: string;
     weight: number;
   }> = [
-    { key: "water", label: "Water", weight: 30 },
-    { key: "soil", label: "Soil", weight: 30 },
-    { key: "income", label: "Income", weight: 25 },
-    { key: "resilience", label: "Resilience", weight: 15 },
-  ];
+      { key: "water", label: "Water", weight: 30 },
+      { key: "soil", label: "Soil", weight: 30 },
+      { key: "income", label: "Income", weight: 25 },
+      { key: "resilience", label: "Resilience", weight: 15 },
+    ];
   return (
     <div className={`score-breakdown ${showWeight ? "score-breakdown-expanded" : ""}`}>
       {metrics.map((metric) => (
