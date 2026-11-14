@@ -14,17 +14,33 @@ export type HistoricalWeather = {
   longitude: number;
   start: string;
   end: string;
+  soilMoisturePercent?: number | null;
+  surfaceTempC?: number | null;
+  recent30dRainfallMm?: number | null;
+  nasaElevationM?: number | null;
 };
 const responseSchema = z.object({
+  geometry: z
+    .object({
+      coordinates: z.array(z.number()).optional(),
+    })
+    .optional(),
   properties: z.object({
     parameter: z.object({
       PRECTOTCORR: z.record(z.number()),
       T2M: z.record(z.number()),
+      GWETTOP: z.record(z.number()).optional(),
+      TS: z.record(z.number()).optional(),
     }),
   }),
 });
 
-export function weatherRequestUrl(location: Coordinates, start: string, end: string): string {
+export function weatherRequestUrl(
+  location: Coordinates,
+  start: string,
+  end: string,
+  parameters = "PRECTOTCORR,T2M",
+): string {
   coordinatesSchema.parse(location);
   const validDate = (value: string) =>
     /^\d{4}-\d{2}-\d{2}$/.test(value) &&
@@ -41,7 +57,7 @@ export function weatherRequestUrl(location: Coordinates, start: string, end: str
     throw new Error("Choose a historical date range from 1981 onward, no longer than one year.");
   }
   const query = new URLSearchParams({
-    parameters: "PRECTOTCORR,T2M",
+    parameters,
     community: "AG",
     latitude: String(location.latitude),
     longitude: String(location.longitude),
@@ -74,13 +90,26 @@ export function parseWeather(payload: unknown, start: string, end: string): Weat
   return days;
 }
 
+function latestValidMetric(record: Record<string, number> | undefined, min: number, max: number) {
+  if (!record) return null;
+  const keys = Object.keys(record).sort();
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const val = record[keys[i]!];
+    if (val !== undefined && Number.isFinite(val) && val !== -999 && val >= min && val <= max) {
+      return val;
+    }
+  }
+  return null;
+}
+
 export async function fetchHistoricalWeather(
   location: Coordinates,
   start: string,
   end: string,
   signal?: AbortSignal,
+  parameters = "PRECTOTCORR,T2M",
 ): Promise<HistoricalWeather> {
-  const sourceUrl = weatherRequestUrl(location, start, end);
+  const sourceUrl = weatherRequestUrl(location, start, end, parameters);
   const response = await fetch(sourceUrl, {
     signal: signal
       ? AbortSignal.any([signal, AbortSignal.timeout(45000)])
@@ -92,13 +121,28 @@ export async function fetchHistoricalWeather(
         ? "NASA request limit reached. Please wait before retrying."
         : `NASA POWER request failed (${response.status}). Please retry later.`,
     );
+  const json = (await response.json()) as unknown;
+  const parsed = responseSchema.parse(json);
+  const days = parseWeather(json, start, end);
+  const rawGwet = latestValidMetric(parsed.properties.parameter.GWETTOP, 0, 1);
+  const rawTs = latestValidMetric(parsed.properties.parameter.TS, -60, 70);
+  const rawElev = parsed.geometry?.coordinates?.[2];
+  const last30 = days.slice(-30).flatMap((d) => (d.rainfall === null ? [] : [d.rainfall]));
   return {
-    days: parseWeather(await response.json(), start, end),
+    days,
     sourceUrl,
     retrievedAt: new Date().toISOString(),
     ...location,
     start,
     end,
+    ...(rawGwet !== null ? { soilMoisturePercent: Math.round(rawGwet * 100) } : {}),
+    ...(rawTs !== null ? { surfaceTempC: Math.round(rawTs * 10) / 10 } : {}),
+    ...(last30.length > 0
+      ? { recent30dRainfallMm: Math.round(last30.reduce((a, b) => a + b, 0)) }
+      : {}),
+    ...(rawElev !== undefined && Number.isFinite(rawElev) && rawElev >= -500
+      ? { nasaElevationM: Math.round(rawElev) }
+      : {}),
   };
 }
 
@@ -141,4 +185,31 @@ export function monthlyWeather(days: WeatherDay[]) {
       missingDays: summary.missingDays + omittedDays,
     };
   });
+}
+
+export async function fetchRecentNasaClimate(
+  location: Coordinates,
+  signal?: AbortSignal,
+): Promise<HistoricalWeather> {
+  const endDate = new Date(Date.now() - 7 * 86400000);
+  const startDate = new Date(endDate.getTime() - 89 * 86400000);
+  const end = endDate.toISOString().slice(0, 10);
+  const start = startDate.toISOString().slice(0, 10);
+  const telemetryParams = "PRECTOTCORR,T2M,GWETTOP,TS";
+  try {
+    return await fetchHistoricalWeather(location, start, end, signal, telemetryParams);
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    const fallbackEnd = new Date(endDate);
+    fallbackEnd.setUTCFullYear(fallbackEnd.getUTCFullYear() - 1);
+    const fallbackStart = new Date(startDate);
+    fallbackStart.setUTCFullYear(fallbackStart.getUTCFullYear() - 1);
+    return fetchHistoricalWeather(
+      location,
+      fallbackStart.toISOString().slice(0, 10),
+      fallbackEnd.toISOString().slice(0, 10),
+      signal,
+      telemetryParams,
+    );
+  }
 }

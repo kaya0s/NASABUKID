@@ -151,6 +151,86 @@ export default {
           ? Response.json({ answer })
           : new Response("The advisor returned no answer", { status: 502 });
       }
+      const reqUrl = new URL(request.url);
+      if (request.method === "GET" && reqUrl.pathname === "/api/streetview") {
+        const lat = Number(reqUrl.searchParams.get("lat"));
+        const lon = Number(reqUrl.searchParams.get("lon"));
+        if (
+          !Number.isFinite(lat) ||
+          !Number.isFinite(lon) ||
+          lat < -90 ||
+          lat > 90 ||
+          lon < -180 ||
+          lon > 180
+        ) {
+          return new Response("Invalid coordinates", { status: 400 });
+        }
+        const mapillaryToken =
+          (env as { MAPILLARY_ACCESS_TOKEN?: string })?.MAPILLARY_ACCESS_TOKEN ??
+          process.env["MAPILLARY_ACCESS_TOKEN"];
+
+        let photoUrl: string | undefined;
+
+        if (mapillaryToken) {
+          const delta = 0.005;
+          const mUrl = new URL("https://graph.mapillary.com/images");
+          mUrl.searchParams.set("access_token", mapillaryToken);
+          mUrl.searchParams.set("fields", "id,thumb_1024_url");
+          mUrl.searchParams.set(
+            "bbox",
+            `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`,
+          );
+          mUrl.searchParams.set("limit", "1");
+          try {
+            const mRes = await fetch(mUrl, { signal: AbortSignal.timeout(7_000) });
+            if (mRes.ok) {
+              const mData = (await mRes.json()) as {
+                data?: Array<{ thumb_1024_url?: string }>;
+              };
+              photoUrl = mData.data?.[0]?.thumb_1024_url;
+            }
+          } catch {
+            // Fall through to KartaView
+          }
+        }
+
+        if (!photoUrl) {
+          const kUrl = new URL("https://api.kartaview.org/2.0/photo/");
+          kUrl.searchParams.set("lat", String(lat));
+          kUrl.searchParams.set("lng", String(lon));
+          kUrl.searchParams.set("radius", "500");
+          try {
+            const kRes = await fetch(kUrl, { signal: AbortSignal.timeout(7_000) });
+            if (kRes.ok) {
+              const kData = (await kRes.json()) as {
+                result?: {
+                  data?: Array<{ fileurlLTh?: string; fileurlProc?: string; fileurl?: string }>;
+                };
+              };
+              const first = kData.result?.data?.[0];
+              photoUrl = first?.fileurlLTh || first?.fileurlProc || first?.fileurl;
+            }
+          } catch {
+            // Handled below
+          }
+        }
+
+        if (!photoUrl) {
+          return new Response("No street-level coverage nearby", { status: 404 });
+        }
+
+        const imgRes = await fetch(photoUrl, { signal: AbortSignal.timeout(10_000) });
+        if (!imgRes.ok || !imgRes.body) {
+          return new Response("Street-level image unavailable", { status: 502 });
+        }
+        return new Response(imgRes.body, {
+          status: 200,
+          headers: {
+            "Content-Type": imgRes.headers.get("Content-Type") || "image/jpeg",
+            "Cache-Control": "public, max-age=86400",
+          },
+        });
+      }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

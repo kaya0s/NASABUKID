@@ -82,6 +82,37 @@ describe("NASA POWER historical observations", () => {
     expect(result.sourceUrl).toContain("power.larc.nasa.gov");
     expect(Number.isFinite(Date.parse(result.retrievedAt))).toBe(true);
   });
+  it("extracts soil moisture, skin temperature, 30-day rain and NASA elevation, ignoring fill values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          geometry: { coordinates: [125, 8.3, 340.4] },
+          properties: {
+            parameter: {
+              PRECTOTCORR: { "20240101": 5, "20240102": 7 },
+              T2M: { "20240101": 24, "20240102": 25 },
+              GWETTOP: { "20240101": 0.5, "20240102": 0.34 },
+              TS: { "20240101": 27, "20240102": -999 },
+            },
+          },
+        }),
+      }),
+    );
+    const result = await fetchHistoricalWeather(
+      location,
+      "2024-01-01",
+      "2024-01-02",
+      undefined,
+      "PRECTOTCORR,T2M,GWETTOP,TS",
+    );
+    expect(result.soilMoisturePercent).toBe(34);
+    expect(result.surfaceTempC).toBe(27);
+    expect(result.recent30dRainfallMm).toBe(12);
+    expect(result.nasaElevationM).toBe(340);
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain("GWETTOP");
+  });
 });
 
 import { monthlyWeather } from "./nasa-power";

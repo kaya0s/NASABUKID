@@ -291,3 +291,869 @@ export function evaluateYieldPilot(
       : null,
   };
 }
+
+export type CropPestRisk = {
+  name: string;
+  riskLevel: "High" | "Moderate" | "Low";
+  riskWindow: string;
+  mitigation: string;
+};
+
+export type CropProfile = {
+  name: string;
+  localName: string;
+  scientificName: string;
+  image: string;
+  category: string;
+  cycleDays: string;
+  plantingWindow: string;
+  soilImpact: string;
+  verificationTags: string[];
+  pestsAndDiseases: CropPestRisk[];
+  pros: string[];
+  cons: string[];
+  layFallowNote: string;
+  baseScores: Rotation["scores"];
+};
+
+// Illustrative Bukidnon crop reference profiles for demo rotation comparison; not verified agronomy.
+export const CROP_PROFILES: Record<string, CropProfile> = {
+  Corn: {
+    name: "Corn",
+    localName: "Mais",
+    scientificName: "Zea mays",
+    image: "/crops/corn.jpg",
+    category: "Cereal",
+    cycleDays: "105–120 Days",
+    plantingWindow: "May – Aug / Oct – Jan",
+    soilImpact: "High nitrogen feeder (~45 kg N/ha drawdown). Benefits from a legume break.",
+    verificationTags: ["DA-ATI Region 10", "BPI IPM", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Fall armyworm (Spodoptera frugiperda)",
+        riskLevel: "High",
+        riskWindow: "Dry-to-wet transition & warm spells (25–30 °C)",
+        mitigation: "Scout whorls weekly from V2–V6; avoid back-to-back corn monoculture.",
+      },
+      {
+        name: "Downy mildew & stalk rot",
+        riskLevel: "Moderate",
+        riskWindow: "High humidity and prolonged wet periods",
+        mitigation: "Use treated seed, improve field drainage, and rotate with legumes.",
+      },
+    ],
+    pros: [
+      "Strong local Bukidnon feed & grain market demand",
+      "Fits upland rainfed schedules with clear 105–120 day harvest windows",
+    ],
+    cons: [
+      "High nitrogen demand depletes soil fertility if repeated without legumes",
+      "Continuous corn increases fall armyworm and soil-borne disease carryover",
+    ],
+    layFallowNote: "Rest 2–3 weeks with retained stover mulch before sowing the next crop.",
+    baseScores: { water: 76, soil: 72, income: 85, resilience: 74 },
+  },
+  Rice: {
+    name: "Rice",
+    localName: "Palay / Humay",
+    scientificName: "Oryza sativa",
+    image: "/crops/rice.jpg",
+    category: "Cereal",
+    cycleDays: "110–125 Days",
+    plantingWindow: "Jun – Oct / Nov – Feb",
+    soilImpact: "Moderate-to-high N & K uptake; puddling can compact subsoil for upland roots.",
+    verificationTags: ["PhilRice", "DA-ATI Region 10", "BPI IPM"],
+    pestsAndDiseases: [
+      {
+        name: "Rice blast & bacterial leaf blight",
+        riskLevel: "High",
+        riskWindow: "Cool, humid mornings and heavy monsoon rains",
+        mitigation: "Avoid excess nitrogen, maintain spacing, and rotate with upland legumes.",
+      },
+      {
+        name: "Brown planthopper & stem borer",
+        riskLevel: "Moderate",
+        riskWindow: "Dense canopy during vegetative to booting stage",
+        mitigation: "Preserve beneficial spiders, synchronize planting, and break continuous rice.",
+      },
+    ],
+    pros: [
+      "Staple household & local market security",
+      "Tolerates bunded or wetter lowland pockets where upland roots rot",
+    ],
+    cons: [
+      "High water requirement; vulnerable during El Niño-like dry shifts",
+      "Repeated wet puddling can compact subsoil for following upland crops",
+    ],
+    layFallowNote: "Allow 3–4 weeks soil aeration and drying after harvest before upland planting.",
+    baseScores: { water: 68, soil: 74, income: 82, resilience: 70 },
+  },
+  Mungbean: {
+    name: "Mungbean",
+    localName: "Mongo",
+    scientificName: "Vigna radiata",
+    image: "/crops/mungbean.jpg",
+    category: "Legume",
+    cycleDays: "60–65 Days",
+    plantingWindow: "Dec – Feb / Dry Transition",
+    soilImpact: "Fixes ~45–60 kg N/ha via root nodules and breaks cereal pest cycles.",
+    verificationTags: ["DA-ATI Region 10", "BPI IPM", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Pod borer & aphids",
+        riskLevel: "Moderate",
+        riskWindow: "Warm dry flowering-to-podding weeks",
+        mitigation: "Monitor flower buds early; harvest promptly and plow under residues.",
+      },
+      {
+        name: "Powdery mildew & Cercospora leaf spot",
+        riskLevel: "Low",
+        riskWindow: "Prolonged high humidity or late-season rains",
+        mitigation: "Avoid waterlogged beds and widen row spacing for airflow.",
+      },
+    ],
+    pros: [
+      "Fixes atmospheric nitrogen, reducing synthetic N needs for the next cereal crop",
+      "Short 60–70 day cycle fits residual moisture after harvest",
+    ],
+    cons: [
+      "Lower gross revenue per hectare than high-input corn or pineapple",
+      "Pods shatter or mold if heavy rain hits right at maturity",
+    ],
+    layFallowNote: "Incorporate legume biomass and rest 1–2 weeks before planting heavy feeders.",
+    baseScores: { water: 85, soil: 90, income: 74, resilience: 86 },
+  },
+  "Sweet potato": {
+    name: "Sweet potato",
+    localName: "Camote",
+    scientificName: "Ipomoea batatas",
+    image: "/crops/sweetpotato.jpg",
+    category: "Root crop",
+    cycleDays: "90–110 Days",
+    plantingWindow: "Mar – May / Sep – Nov",
+    soilImpact: "Scavenges residual nitrogen; dense vines shield soil against rain splash erosion.",
+    verificationTags: ["DA-ATI Region 10", "BPI IPM", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Sweet potato weevil (Cylas formicarius)",
+        riskLevel: "High",
+        riskWindow: "Dry cracked soils during tuber bulking",
+        mitigation: "Hill up soil over cracks, use clean vine cuttings, and rotate away from roots.",
+      },
+      {
+        name: "Storage-root rot",
+        riskLevel: "Moderate",
+        riskWindow: "Waterlogged or poorly drained clay pockets",
+        mitigation: "Plant on raised ridges and avoid fields with poor drainage.",
+      },
+    ],
+    pros: [
+      "Dense vine canopy suppresses weeds and shields sloping soil from erosion",
+      "Diversifies food and market income with moderate fertilizer input",
+    ],
+    cons: [
+      "Sensitive to waterlogging during root bulking (40%+ loss risk in saturated soils)",
+      "Bulkier harvest logistics compared to bagged grain",
+    ],
+    layFallowNote: "Clear old vines to break weevil cycles and rest soil 2–3 weeks.",
+    baseScores: { water: 86, soil: 82, income: 79, resilience: 84 },
+  },
+  Cassava: {
+    name: "Cassava",
+    localName: "Kamoteng Kahoy / Balanghoy",
+    scientificName: "Manihot esculenta",
+    image: "/crops/cassava.jpg",
+    category: "Root crop",
+    cycleDays: "240–300 Days",
+    plantingWindow: "May – Jul / Oct – Dec",
+    soilImpact: "Heavy potassium user; tolerates acidic upland soils and dry spells.",
+    verificationTags: ["DA-ATI Region 10", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Cassava mealybug & red spider mite",
+        riskLevel: "Moderate",
+        riskWindow: "Extended dry spells (>26 °C)",
+        mitigation: "Inspect planting stakes before setting; avoid moving infested cuttings.",
+      },
+      {
+        name: "Root rot (Phytophthora)",
+        riskLevel: "Moderate",
+        riskWindow: "Standing water in low-lying clay fields",
+        mitigation: "Use well-drained ridges and avoid poorly drained depressions.",
+      },
+    ],
+    pros: [
+      "Strong drought tolerance and steady industrial starch demand in Bukidnon",
+      "Produces on moderately acidic upland soils (pH 5.0–6.5)",
+    ],
+    cons: [
+      "Long 8–12 month cycle ties up land and slows short-season rotation",
+      "Heavy potassium removal requires replenishment after harvest",
+    ],
+    layFallowNote: "Rest 3–4 weeks with organic mulch or legume cover after root harvest.",
+    baseScores: { water: 89, soil: 76, income: 80, resilience: 88 },
+  },
+  Sorghum: {
+    name: "Sorghum",
+    localName: "Batad",
+    scientificName: "Sorghum bicolor",
+    image: "/crops/sorghum.jpg",
+    category: "Cereal",
+    cycleDays: "95–110 Days",
+    plantingWindow: "Nov – Feb / Dry Transition",
+    soilImpact: "Deep roots scavenge residual moisture and nutrients during dry shifts.",
+    verificationTags: ["FAO EcoCrop", "DA-ATI Region 10"],
+    pestsAndDiseases: [
+      {
+        name: "Sorghum shoot fly & head bug",
+        riskLevel: "Moderate",
+        riskWindow: "Late planting into warm, humid flowering windows",
+        mitigation: "Plant early with uniform emergence and rotate with legumes.",
+      },
+      {
+        name: "Grain mold",
+        riskLevel: "Low",
+        riskWindow: "Heavy rain during grain fill",
+        mitigation: "Time maturity for drier months; harvest promptly at physiological maturity.",
+      },
+    ],
+    pros: [
+      "Lower drought sensitivity than corn (FAO 450–650 mm seasonal need)",
+      "Deep roots scavenge residual nutrients and tolerate dry spells",
+    ],
+    cons: [
+      "Smaller local buyer network in some Bukidnon barangays than yellow corn",
+      "Bird pressure on small isolated plots near ripening",
+    ],
+    layFallowNote: "Cut stalks for mulch and rest 2 weeks before legume establishment.",
+    baseScores: { water: 92, soil: 81, income: 72, resilience: 88 },
+  },
+  Pineapple: {
+    name: "Pineapple",
+    localName: "Pinya",
+    scientificName: "Ananas comosus",
+    image: "/crops/pineapple.jpg",
+    category: "Plantation",
+    cycleDays: "14–18 Months",
+    plantingWindow: "May – Sep / Year-round w/ moisture",
+    soilImpact: "High organic-matter & K demand; continuous beds raise nematode pressure.",
+    verificationTags: ["DA-ATI Region 10", "BPI IPM", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Mealybug wilt & Phytophthora heart rot",
+        riskLevel: "High",
+        riskWindow: "Warm wet months with poor surface drainage",
+        mitigation: "Use clean suckers, raised beds, and control ant vectors.",
+      },
+      {
+        name: "Nematode buildup",
+        riskLevel: "Moderate",
+        riskWindow: "Continuous multi-cycle pineapple without break crops",
+        mitigation: "Rotate with legumes or fallow cover between ratoon cycles.",
+      },
+    ],
+    pros: [
+      "High market value in Bukidnon's highland volcanic soils (tolerates pH 4.5–5.8)",
+      "Well-established processing and fresh-market supply chains",
+    ],
+    cons: [
+      "Long 14–18 month cycle with high upfront planting material and labor cost",
+      "Continuous beds deplete soil organic matter and increase nematode pressure",
+    ],
+    layFallowNote: "Allow 4–8 weeks bed breakdown and cover-crop rest after ratoon termination.",
+    baseScores: { water: 79, soil: 71, income: 88, resilience: 76 },
+  },
+  Banana: {
+    name: "Banana",
+    localName: "Saging",
+    scientificName: "Musa acuminata",
+    image: "/crops/banana.jpg",
+    category: "Plantation",
+    cycleDays: "10–12 Months (First Bunch)",
+    plantingWindow: "May – Oct",
+    soilImpact: "High potassium & moisture user; deep roots help stabilize gentle slopes.",
+    verificationTags: ["DA-ATI Region 10", "BPI IPM", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Fusarium wilt (TR4) & Black Sigatoka",
+        riskLevel: "High",
+        riskWindow: "Warm, humid months with splash-borne rain",
+        mitigation: "De-leaf infected foliage, sanitize tools, and avoid waterlogged soils.",
+      },
+      {
+        name: "Banana weevil & burrowing nematode",
+        riskLevel: "Moderate",
+        riskWindow: "Aging mats with poor sanitation",
+        mitigation: "Use tissue-cultured plantlets and rotate infected blocks to non-hosts.",
+      },
+    ],
+    pros: [
+      "Continuous harvest cash flow once established",
+      "Deep root system stabilizes gentle-to-moderate upland slopes",
+    ],
+    cons: [
+      "High windthrow and flood-siltation vulnerability during severe storms",
+      "Soil-borne wilt can persist for years if blocks are not rested or rotated",
+    ],
+    layFallowNote: "Rest and solarize/cover-crop 6–8 weeks before replanting blocks.",
+    baseScores: { water: 74, soil: 76, income: 86, resilience: 73 },
+  },
+  "Sugar Cane": {
+    name: "Sugar Cane",
+    localName: "Tubo",
+    scientificName: "Saccharum officinarum",
+    image: "/crops/sugarcane.jpg",
+    category: "Plantation",
+    cycleDays: "10–12 Months",
+    plantingWindow: "Nov – Mar / May – Jun",
+    soilImpact: "Multi-year ratoons compact soil and deplete N & K; trash mulching protects topsoil.",
+    verificationTags: ["DA-ATI Region 10", "BPI IPM", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Sugarcane borer & white grubs",
+        riskLevel: "Moderate",
+        riskWindow: "Warm dry-to-wet transitions in ratoon fields",
+        mitigation: "Trash-mulch, release Trichogramma if available, and break ratoons with legumes.",
+      },
+      {
+        name: "Smut & red rot",
+        riskLevel: "Moderate",
+        riskWindow: "Waterlogged ratoon stools after heavy rain",
+        mitigation: "Rogue infected stools early and replant with clean setts after a legume break.",
+      },
+    ],
+    pros: [
+      "Strong Bukidnon milling infrastructure and ratooning reduces annual land prep",
+      "Dense canopy protects soil once closed",
+    ],
+    cons: [
+      "Multi-year ratoon compaction and nitrogen/potassium drawdown",
+      "Burning trash accelerates organic matter loss and erosion on slopes",
+    ],
+    layFallowNote: "After final ratoon, rest 4–6 weeks or sow mungbean before replanting.",
+    baseScores: { water: 75, soil: 70, income: 83, resilience: 77 },
+  },
+  Fallow: {
+    name: "Fallow",
+    localName: "Pahuway sa Yuta / Cover Rest",
+    scientificName: "Cover / Rest Cycle",
+    image: "/crops/fallow.jpg",
+    category: "Cover / Rest",
+    cycleDays: "30–60 Days",
+    plantingWindow: "Any Post-Harvest Recovery Window",
+    soilImpact: "Restores soil structure, organic carbon, and disrupts host-specific pests.",
+    verificationTags: ["DA-ATI Region 10", "FAO EcoCrop"],
+    pestsAndDiseases: [
+      {
+        name: "Volunteer weed & pest host carryover",
+        riskLevel: "Low",
+        riskWindow: "Unmanaged regrowth during wet months",
+        mitigation: "Slash weeds before seeding or sow a deliberate legume cover.",
+      },
+    ],
+    pros: [
+      "Breaks pest/disease cycles and lets compacted or waterlogged soil recover",
+      "Reduces erosion risk on steep slopes when cover vegetation is maintained",
+    ],
+    cons: [
+      "Zero direct crop revenue during the resting window",
+      "Requires light slashing so aggressive weeds do not set seed",
+    ],
+    layFallowNote: "Active 4–8 week recovery rest with cover mulch before resuming cash crops.",
+    baseScores: { water: 94, soil: 95, income: 40, resilience: 94 },
+  },
+};
+
+export type RotationStrategy = Rotation & {
+  total: number;
+  strategyLabel: string;
+  isCurrentRotation: boolean;
+  nextCrop: string;
+  nextCropLocalName: string;
+  nextCropScientificName: string;
+  cycleDays: string;
+  plantingWindow: string;
+  verificationTags: string[];
+  nextCropImage: string;
+  pros: string[];
+  cons: string[];
+  pestsAndDiseases: CropPestRisk[];
+  layFallowPeriod: string;
+  satelliteWhy: string[];
+  evidenceGaps: string[];
+};
+
+export function getCropProfile(name: string): CropProfile {
+  return CROP_PROFILES[name] ?? CROP_PROFILES["Corn"]!;
+}
+
+// Pure typed demo logic comparing the farmer's current rotation against two alternatives.
+export function buildRotationStrategies(
+  scenario: ClimateScenario,
+  farm: DemoFarmContext & {
+    crop: string;
+    previous: string;
+    slopePercent?: number | null;
+    soil?: string;
+  },
+): RotationStrategy[] {
+  const currentCrop = farm.crop?.trim() || "Corn";
+  const previousCrop = farm.previous?.trim() || "Mungbean";
+  const isMonoculture = previousCrop.toLowerCase() === currentCrop.toLowerCase();
+  const month = Number(farm.planted.slice(5, 7)) - 1;
+  const rainfall = farm.monthlyRainfall?.[month];
+  const ph = farm.ph;
+  const slope = farm.slopePercent ?? null;
+
+  const currentNext = isMonoculture ? currentCrop : previousCrop === "Fallow" ? currentCrop : previousCrop;
+  const legumeNext = currentCrop === "Mungbean" ? "Corn" : "Mungbean";
+  const legumeFollow = legumeNext === "Mungbean" ? (currentCrop === "Rice" ? "Rice" : "Corn") : "Mungbean";
+
+  const resilientNext =
+    slope !== null && slope >= 15
+      ? "Fallow"
+      : scenario === "El Niño-like"
+        ? currentCrop === "Sorghum"
+          ? "Cassava"
+          : "Sorghum"
+        : farm.drainage === "Poor"
+          ? "Rice"
+          : currentCrop === "Sweet potato"
+            ? "Cassava"
+            : "Sweet potato";
+
+  const resilientFollow =
+    resilientNext === "Fallow" ? "Mungbean" : resilientNext === "Rice" ? "Mungbean" : "Corn";
+
+  const rawStrategies: Array<{
+    id: string;
+    strategyLabel: string;
+    isCurrentRotation: boolean;
+    sequence: string[];
+    nextCrop: string;
+    baseNote: string;
+    extraWhy: string[];
+  }> = [
+    {
+      id: "current-baseline",
+      strategyLabel: "FARMER'S CURRENT ROTATION",
+      isCurrentRotation: true,
+      sequence: [previousCrop, currentCrop, currentNext],
+      nextCrop: currentNext,
+      baseNote: isMonoculture
+        ? `Continuing ${currentCrop} after ${previousCrop} keeps familiar management but risks pest carryover and nutrient depletion.`
+        : `Continuing your ${previousCrop} → ${currentCrop} → ${currentNext} pattern as the baseline benchmark.`,
+      extraWhy: [
+        isMonoculture
+          ? `Repeated ${currentCrop} history flags higher pest/disease pressure and soil nutrient drawdown.`
+          : `Baseline reflects your reported ${previousCrop} → ${currentCrop} field history.`,
+      ],
+    },
+    {
+      id: "legume-break",
+      strategyLabel: "ALTERNATIVE 1 · NITROGEN & PEST BREAK",
+      isCurrentRotation: false,
+      sequence: [currentCrop, legumeNext, legumeFollow],
+      nextCrop: legumeNext,
+      baseNote:
+        legumeNext === "Mungbean"
+          ? `Inserts a short-cycle Mungbean break after ${currentCrop} to fix nitrogen and disrupt host-specific pests.`
+          : `Follows ${currentCrop} with ${legumeNext} to utilize fixed nitrogen and diversify harvest timing.`,
+      extraWhy: [
+        "Legume break interrupts cereal/plantation pest cycles and supports topsoil nitrogen.",
+      ],
+    },
+    {
+      id: "resilient-diversification",
+      strategyLabel: "ALTERNATIVE 2 · CLIMATE & TERRAIN FIT",
+      isCurrentRotation: false,
+      sequence: [currentCrop, resilientNext, resilientFollow],
+      nextCrop: resilientNext,
+      baseNote:
+        resilientNext === "Fallow"
+          ? "Recommends a restorative fallow/cover window before the next cash crop due to steeper terrain."
+          : `Adapts to ${scenario} assumptions and field drainage by rotating ${currentCrop} into ${resilientNext}.`,
+      extraWhy: [
+        resilientNext === "Fallow"
+          ? "Steeper slope increases runoff risk; cover rest protects topsoil before replanting."
+          : `Selected for ${scenario} moisture/terrain tolerance relative to continuous ${currentCrop}.`,
+      ],
+    },
+  ];
+
+  return rawStrategies.map((item) => {
+    const profile = getCropProfile(item.nextCrop);
+    const scores = { ...profile.baseScores };
+    const satelliteWhy = [...item.extraWhy];
+    const evidenceGaps: string[] = [];
+
+    if (item.isCurrentRotation && isMonoculture) {
+      scores.soil -= 14;
+      scores.resilience -= 12;
+      satelliteWhy.push("Monoculture penalty applied (−14 soil, −12 resilience) for demo comparison.");
+    }
+
+    if (scenario === "El Niño-like") {
+      if (item.nextCrop === "Sorghum" || item.nextCrop === "Cassava" || item.nextCrop === "Mungbean") {
+        scores.water += 4;
+        scores.resilience += 4;
+      } else if (item.nextCrop === "Rice") {
+        scores.water -= 14;
+        scores.resilience -= 8;
+      } else {
+        scores.water -= 6;
+      }
+    } else if (scenario === "Wet") {
+      if (item.nextCrop === "Sweet potato" && farm.drainage !== "Good") {
+        scores.soil -= 10;
+        scores.resilience -= 8;
+      } else if (item.nextCrop === "Rice") {
+        scores.water += 6;
+      }
+    }
+
+    if (Number.isFinite(ph) && (ph < 5.5 || ph > 7.5)) {
+      const phPenalty = item.nextCrop === "Pineapple" || item.nextCrop === "Cassava" ? 4 : 12;
+      scores.soil -= phPenalty;
+      satelliteWhy.push(
+        `SoilGrids pH (${ph.toFixed(1)}) is outside 5.5–7.5; soil score adjusted −${phPenalty}.`,
+      );
+    } else if (Number.isFinite(ph)) {
+      satelliteWhy.push(`SoilGrids pH (${ph.toFixed(1)}) falls within typical 5.5–7.5 demo range.`);
+    } else {
+      evidenceGaps.push("Soil pH is missing; obtain a local soil test before applying lime or fertilizer.");
+    }
+
+    let noteText = item.baseNote;
+    if (farm.drainage === "Poor") {
+      const drainPenalty = item.nextCrop === "Sweet potato" || item.nextCrop === "Cassava" ? 18 : 8;
+      scores.soil -= drainPenalty;
+      noteText = `${noteText} Poor drainage: demo soil rating −${drainPenalty}. Field assessment required.`;
+      satelliteWhy.push(`Poor drainage reduces ${item.nextCrop} soil score by −${drainPenalty}.`);
+    } else if (farm.drainage === "Unknown") {
+      evidenceGaps.push("Field drainage is unconfirmed; check for standing water before planting roots or legumes.");
+    }
+
+    if (slope !== null && Number.isFinite(slope)) {
+      if (slope >= 15) {
+        if (item.nextCrop !== "Fallow" && item.nextCrop !== "Banana") scores.soil -= 8;
+        satelliteWhy.push(`Open-Meteo slope (${slope.toFixed(1)}%) flags erosion risk on tilled beds.`);
+      } else {
+        satelliteWhy.push(`Terrain slope (${slope.toFixed(1)}%) is within manageable cultivation limits.`);
+      }
+    } else {
+      evidenceGaps.push("Slope/elevation check not yet loaded; verify hillside runoff channels locally.");
+    }
+
+    if (rainfall !== undefined) {
+      const sampleMonthlyNeed =
+        item.nextCrop === "Sorghum" || item.nextCrop === "Mungbean"
+          ? 95
+          : item.nextCrop === "Sweet potato" || item.nextCrop === "Cassava"
+            ? 110
+            : 130;
+      scores.water = Math.min(100, (rainfall / sampleMonthlyNeed) * 100);
+      satelliteWhy.push(
+        `NASA POWER planting-month rain (${rainfall.toFixed(1)} mm) compared against ${sampleMonthlyNeed} mm demo threshold.`,
+      );
+    } else {
+      evidenceGaps.push("Planting-month NASA POWER rainfall not yet applied; using scenario baseline.");
+    }
+
+    if (["Gravity-fed", "Pump-irrigated", "Drip irrigation"].includes(farm.irrigation)) {
+      scores.water += 5;
+      satelliteWhy.push(`Reported ${farm.irrigation} adds +5 water score (capacity unverified).`);
+    } else if (farm.irrigation === "Unknown") {
+      evidenceGaps.push("Irrigation status is unknown; rainfed risk cannot be ruled out.");
+    }
+
+    evidenceGaps.push("Local market prices, seed availability, and micro-climate require farmer/agronomist review.");
+
+    for (const key of Object.keys(scores) as Array<keyof typeof scores>) {
+      scores[key] = Math.round(Math.max(0, Math.min(100, scores[key])) * 10) / 10;
+    }
+
+    return {
+      id: item.id,
+      name: item.sequence.join(" → "),
+      strategyLabel: item.strategyLabel,
+      isCurrentRotation: item.isCurrentRotation,
+      sequence: item.sequence,
+      nextCrop: item.nextCrop,
+      nextCropLocalName: profile.localName,
+      nextCropScientificName: profile.scientificName,
+      cycleDays: profile.cycleDays,
+      plantingWindow: profile.plantingWindow,
+      verificationTags: profile.verificationTags,
+      nextCropImage: profile.image,
+      note: noteText,
+      scores,
+      total: calculateRotationScore(scores),
+      pros: profile.pros,
+      cons: profile.cons,
+      pestsAndDiseases: profile.pestsAndDiseases,
+      layFallowPeriod: profile.layFallowNote,
+      satelliteWhy,
+      evidenceGaps,
+    };
+  });
+}
+
+export type FertilizerStage = {
+  stage: string;
+  timing: string;
+  guidance: string;
+};
+
+export type SoilAndAgronomyAdvisory = {
+  suitability: {
+    status: "Suitable" | "Conditional" | "Not suitable for intensive tillage";
+    summary: string;
+    flags: string[];
+  };
+  soilProfile: {
+    phLabel: string;
+    phStatus: "Acidic" | "Optimal" | "Alkaline" | "Unknown";
+    mineralsNeeded: string[];
+    recommendedFertilizers: string[];
+    avoidFertilizers: string[];
+  };
+  fertilizerStages: FertilizerStage[];
+  climateTiming: {
+    bestPlantingWindow: string;
+    prominentPestClimate: string;
+  };
+};
+
+// Illustrative demo screening logic for soil, fertilizer stages, and slope suitability; not a lab soil test.
+export function buildSoilAndAgronomyAdvisory(input: {
+  nextCrop: string;
+  previousCrop: string;
+  ph: number | null;
+  soilTexture: string;
+  drainage: string;
+  irrigation: string;
+  slopePercent: number | null;
+  elevation: number | null;
+  monthlyRainfall?: number[];
+  monthlyTemperature?: number[];
+}): SoilAndAgronomyAdvisory {
+  const {
+    nextCrop,
+    previousCrop,
+    ph,
+    soilTexture,
+    drainage,
+    slopePercent,
+    elevation,
+    monthlyRainfall,
+    monthlyTemperature,
+  } = input;
+
+  // 1. Planting suitability screening (slope, drainage, pH)
+  const flags: string[] = [];
+  let status: SoilAndAgronomyAdvisory["suitability"]["status"] = "Suitable";
+
+  if (slopePercent !== null && Number.isFinite(slopePercent)) {
+    if (slopePercent >= 18) {
+      status = "Not suitable for intensive tillage";
+      flags.push(
+        `Steep slope (${slopePercent.toFixed(1)}%): high erosion risk for clean-tilled annuals. Prefer agroforestry, contour strips, or restorative fallow.`,
+      );
+    } else if (slopePercent >= 8) {
+      status = "Conditional";
+      flags.push(
+        `Moderate slope (${slopePercent.toFixed(1)}%): plant along contour lines and retain mulch cover.`,
+      );
+    } else {
+      flags.push(`Gentle slope (${slopePercent.toFixed(1)}%): low runoff risk for row crops.`);
+    }
+  } else {
+    flags.push("Slope data unavailable: inspect field grade for runoff channels before tilling.");
+  }
+
+  if (drainage === "Poor") {
+    if (status === "Suitable") status = "Conditional";
+    flags.push(
+      `Poor drainage: avoid flat-bed root crops (${nextCrop === "Sweet potato" || nextCrop === "Cassava" ? "high rot risk" : "use raised beds/canals"}).`,
+    );
+  }
+
+  if (ph !== null && Number.isFinite(ph) && (ph < 4.8 || ph > 8.0)) {
+    if (status === "Suitable") status = "Conditional";
+    flags.push(
+      `Extreme SoilGrids pH (${ph.toFixed(1)}): confirm with a local soil test before planting sensitive crops.`,
+    );
+  }
+
+  if (elevation !== null && Number.isFinite(elevation)) {
+    flags.push(`Elevation ~${Math.round(elevation)} m ASL: matches ${elevation >= 500 ? "Bukidnon mid-to-highland" : "lowland/valley"} thermal profile.`);
+  }
+
+  const suitabilitySummary =
+    status === "Not suitable for intensive tillage"
+      ? "Satellite terrain flags steep-slope erosion risk. Avoid open tillage; use cover or perennial strips."
+      : status === "Conditional"
+        ? "Planting is possible with targeted soil/drainage mitigations listed below."
+        : "No major terrain or drainage blockers detected in screening data; verify locally.";
+
+  // 2. Soil pH, mineral needs & fertilizer guidance (use vs avoid)
+  let phStatus: SoilAndAgronomyAdvisory["soilProfile"]["phStatus"] = "Unknown";
+  let phLabel = "Unknown (local soil test needed)";
+  const mineralsNeeded: string[] = [];
+  const recommendedFertilizers: string[] = [];
+  const avoidFertilizers: string[] = [];
+
+  if (ph !== null && Number.isFinite(ph)) {
+    if (ph < 5.5) {
+      phStatus = "Acidic";
+      phLabel = `pH ${ph.toFixed(1)} (Acidic)`;
+      mineralsNeeded.push("Calcium (Ca) & Magnesium (Mg) via agricultural lime", "Available Phosphorus (P) — often fixed in acidic volcanic soils");
+      recommendedFertilizers.push("Dolomitic / agricultural lime (2–4 weeks pre-plant)", "Rock phosphate or 14-14-14 + organic compost");
+      avoidFertilizers.push("Heavy straight Ammonium Sulfate (21-0-0) without liming (further lowers pH)");
+    } else if (ph <= 7.5) {
+      phStatus = "Optimal";
+      phLabel = `pH ${ph.toFixed(1)} (Balanced)`;
+      mineralsNeeded.push(
+        previousCrop === "Corn" || previousCrop === "Rice" || previousCrop === "Sugar Cane"
+          ? "Nitrogen (N) & Potassium (K) replenishment after heavy cereal/cane uptake"
+          : "Balanced N-P-K maintenance",
+      );
+      recommendedFertilizers.push("Complete 14-14-14 basal + compost/vermicast", "Targeted Urea (46-0-0) split-applied");
+      avoidFertilizers.push("Single-pass heavy nitrogen before heavy rain (leaching & lodging risk)");
+    } else {
+      phStatus = "Alkaline";
+      phLabel = `pH ${ph.toFixed(1)} (Alkaline)`;
+      mineralsNeeded.push("Zinc (Zn), Iron (Fe), & Phosphorus availability check");
+      recommendedFertilizers.push("Ammonium sulfate (21-0-0) or organic mulch to gently buffer pH", "Foliar micronutrient check if chlorosis appears");
+      avoidFertilizers.push("Additional agricultural lime or wood ash (raises pH further)");
+    }
+  } else {
+    mineralsNeeded.push("Run a barangay/DA soil kit check for N-P-K and pH before basal purchase");
+    recommendedFertilizers.push("Well-decomposed farmyard manure or compost as a safe soil-building base");
+    avoidFertilizers.push("Unverified high-rate synthetic blends without knowing baseline soil pH");
+  }
+
+  if (soilTexture.toLowerCase().includes("sand") && soilTexture.includes("6")) {
+    mineralsNeeded.push("Organic matter & Potassium (K) — sandy soils leach mobile nutrients quickly");
+    avoidFertilizers.push("Single heavy broadcast of soluble Urea (split into 2–3 smaller doses)");
+  }
+
+  if (nextCrop === "Mungbean") {
+    recommendedFertilizers.push("Rhizobium inoculant + low starter N (let legume nodules fix nitrogen)");
+    avoidFertilizers.push("High nitrogen rates (>30 kg N/ha) — suppresses root nodulation and causes excess vine");
+  } else if (nextCrop === "Sweet potato" || nextCrop === "Cassava") {
+    mineralsNeeded.push("Potassium (K) for root/tuber bulking");
+    recommendedFertilizers.push("Muriate of Potash (0-0-60) or balanced K-rich blend");
+    avoidFertilizers.push("Excess late-stage Nitrogen (produces leafy vines at the expense of tubers)");
+  } else if (nextCrop === "Fallow") {
+    mineralsNeeded.push("Organic carbon & surface residue retention");
+    recommendedFertilizers.push("Retain crop stover/mulch or sow cover legumes; skip synthetic fertilizer");
+    avoidFertilizers.push("Synthetic top-dressing during rest period");
+  }
+
+  // 3. Fertilizer timing stages by crop development
+  const fertilizerStages: FertilizerStage[] =
+    nextCrop === "Fallow"
+      ? [
+          {
+            stage: "Rest & Cover Establishment",
+            timing: "0–14 days post-harvest",
+            guidance: "Slash residues evenly as surface mulch; avoid synthetic fertilizer.",
+          },
+          {
+            stage: "Soil Recovery Window",
+            timing: "Weeks 2–6",
+            guidance: "Allow soil structure and beneficial microbes to recover; slash aggressive weeds before seeding.",
+          },
+        ]
+      : nextCrop === "Mungbean"
+        ? [
+            {
+              stage: "Basal (At Planting)",
+              timing: "Day 0",
+              guidance: "Apply light starter P & K (or 14-14-14) + Rhizobium inoculant in moist furrows.",
+            },
+            {
+              stage: "Early Vegetative",
+              timing: "14–21 DAS",
+              guidance: "Check nodulation; skip top-dress N if pink active nodules are present.",
+            },
+            {
+              stage: "Flowering to Pod Fill",
+              timing: "30–45 DAS",
+              guidance: "Keep soil evenly moist; foliar K/micronutrients only if deficiency shows.",
+            },
+          ]
+        : nextCrop === "Sweet potato" || nextCrop === "Cassava"
+          ? [
+              {
+                stage: "Basal (Ridge Prep)",
+                timing: "Day 0–7",
+                guidance: "Incorporate compost + balanced P/K basal along raised ridges.",
+              },
+              {
+                stage: "Vegetative Canopy",
+                timing: "25–35 DAP",
+                guidance: "Side-dress moderate N + K and hill up soil to cover developing roots.",
+              },
+              {
+                stage: "Root Bulking",
+                timing: "55–75 DAP",
+                guidance: "Stop nitrogen; ensure potassium availability and keep ridges drained.",
+              },
+            ]
+          : [
+              {
+                stage: "Basal (At Planting)",
+                timing: "Day 0",
+                guidance: "Band 14-14-14 + organic compost 5 cm beside seed/sett; apply lime 2–4 weeks earlier if pH < 5.5.",
+              },
+              {
+                stage: "Vegetative (V4–V6 / Tillering)",
+                timing: "21–30 DAP",
+                guidance: "Side-dress Urea (46-0-0) into moist soil before hilling up; avoid broadcasting before storms.",
+              },
+              {
+                stage: "Pre-Tassel / Booting",
+                timing: "45–55 DAP",
+                guidance: "Final split N + K boost to support ear/panicle/stalk fill.",
+              },
+            ];
+
+  // 4. Climate planting window & pest-prominent conditions
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  let bestPlantingWindow =
+    "May–June (onset of wet season) or Oct–Nov (second-crop residual moisture window) in typical Bukidnon calendars.";
+  let prominentPestClimate =
+    "Warm dry-to-wet transitions (25–30 °C) favor fall armyworm, aphids, and weevils; prolonged >250 mm wet months elevate fungal blight, downy mildew, and root rot.";
+
+  if (monthlyRainfall?.length === 12) {
+    const idealMonths = monthlyRainfall
+      .map((mm, idx) => ({ mm, name: monthNames[idx]! }))
+      .filter((m) => m.mm >= 110 && m.mm <= 240)
+      .map((m) => m.name);
+    const wettest = monthlyRainfall
+      .map((mm, idx) => ({ mm, name: monthNames[idx]! }))
+      .sort((a, b) => b.mm - a.mm)[0];
+    const warmest = monthlyTemperature?.length === 12
+      ? monthlyTemperature
+          .map((t, idx) => ({ t, name: monthNames[idx]! }))
+          .sort((a, b) => b.t - a.t)[0]
+      : null;
+
+    if (idealMonths.length > 0) {
+      bestPlantingWindow = `NASA POWER shows moderate moisture (110–240 mm/mo) in ${idealMonths.slice(0, 4).join(", ")} — favorable demo establishment windows.`;
+    }
+    if (wettest) {
+      prominentPestClimate = `Peak rain (~${Math.round(wettest.mm)} mm in ${wettest.name}) raises fungal/waterlogging risk${warmest ? `; warmest month (${warmest.t.toFixed(1)} °C in ${warmest.name}) elevates insect pest pressure` : ""}.`;
+    }
+  }
+
+  return {
+    suitability: { status, summary: suitabilitySummary, flags },
+    soilProfile: { phLabel, phStatus, mineralsNeeded, recommendedFertilizers, avoidFertilizers },
+    fertilizerStages,
+    climateTiming: { bestPlantingWindow, prominentPestClimate },
+  };
+}

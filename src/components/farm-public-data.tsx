@@ -18,6 +18,8 @@ export type ContextFields = {
   ph?: string;
   soil?: string;
   drainage?: "Poor" | "Good";
+  elevation?: number;
+  slopePercent?: number;
 };
 export function FarmPublicData({
   location,
@@ -95,6 +97,13 @@ export function FarmPublicData({
         ...(soil.data.texture ? { soil: soil.data.texture } : {}),
       });
   }, [confirmed, key, ready, soil.data]);
+  useEffect(() => {
+    if (confirmed && ready === key && terrain.data)
+      apply.current({
+        elevation: terrain.data.elevation,
+        slopePercent: terrain.data.slopePercent,
+      });
+  }, [confirmed, key, ready, terrain.data]);
   return (
     <section className="public-data-panel" aria-label="Farm location and soil sources">
       <h3>Farm context</h3>
