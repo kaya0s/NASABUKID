@@ -10,7 +10,7 @@ import {
   Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, Bot,
   CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, CloudDrizzle, CloudSun,
   Compass, Droplets, FileText, FlaskConical, Flower2, HeartHandshake, ImagePlus, Leaf,
-  MapPin, Menu, MessageCircle, Mountain, RotateCcw, Send, ShieldCheck, Sprout, Sun,
+  MapPin, Menu, MessageCircle, Mountain, Plus, RotateCcw, Send, ShieldCheck, Sprout, Sun,
   Thermometer, Upload, Waves, Wind, X,
 } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
@@ -47,13 +47,12 @@ type Page = "overview" | "farm" | "prevention" | "recovery" | "evidence" | "chat
 type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
 type Farm = { place: string; area: string; crop: string; previous: string; ph: string; soil: string; irrigation: string; drainage: string; planted: string };
 type ChatMessage = { role: "assistant" | "user"; text: string };
-const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; section: string }> = [
-  { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
-  { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
-  { id: "prevention", label: "Crop planning", icon: Flower2, section: "WORKSPACE" },
-  { id: "recovery", label: "Damage recovery", icon: HeartHandshake, section: "WORKSPACE" },
-  { id: "evidence", label: "Evidence & sources", icon: FileText, section: "INSIGHTS" },
-  { id: "chat", label: "Field advisor", icon: MessageCircle, section: "INSIGHTS" },
+const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; isCenter?: boolean }> = [
+  { id: "overview", label: "Overview", icon: Compass },
+  { id: "farm", label: "My farm", icon: Sprout },
+  { id: "prevention", label: "Crop planning", icon: Plus, isCenter: true },
+  { id: "recovery", label: "Damage recovery", icon: HeartHandshake },
+  { id: "chat", label: "Field advisor", icon: MessageCircle },
 ];
 const SCENARIOS: ClimateScenario[] = ["Typical", "El Niño-like", "Wet"];
 const SUGGESTED_QUESTIONS = ["Why plant a legume after corn?", "What changes in a dry season?", "How was my loss estimate calculated?"];
@@ -208,22 +207,18 @@ function FieldShift() {
 
   return (
     <div className="app-shell">
-      {mobileNavOpen && <button className="mobile-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
-      <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
-        <div className="brand"><div className="brand-mark"><Sprout size={21} strokeWidth={1.8} /></div><div><span className="brand-name">fieldshift<span className="brand-ai">ai</span></span><span className="brand-caption">GROW WITH CONFIDENCE</span></div><button className="sidebar-close" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}><X size={18} /></button></div>
-        <div className="workspace-label">YOUR FIELD DESK <ChevronDown size={14} /></div>
-        <div className="sidebar-location"><MapPin size={15} /><div><strong>{farm.place}</strong><span>Selected farm reference</span></div><span className="location-dot" /></div>
-        <nav className="main-nav" aria-label="Main navigation">
-          {NAV.map((item, index) => {
-            const Icon = item.icon;
-            return <div key={item.id}>{(index === 0 || NAV[index - 1]?.section !== item.section) && <span className="nav-section">{item.section}</span>}<button className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => goTo(item.id)}><Icon size={17} strokeWidth={1.8} /><span>{item.label}</span>{item.id === "recovery" && <span className="nav-live-dot" />}</button></div>;
-          })}
-        </nav>
-        <div className="sidebar-foot"><div className="guide-avatar"><Mountain size={17} /></div><div><span>BUKIDNON FIELD GUIDE</span><strong>Farmer-first, season-ready.</strong></div><button className="sidebar-help" title="Get friendly, sample-based planning guidance" aria-label="Get field guidance" onClick={() => goTo("chat")}><CircleHelp size={17} /></button></div>
-      </aside>
-
       <main className="main-area">
-        <header className="topbar"><div className="topbar-left"><Button size="icon" variant="ghost" className="mobile-menu" aria-label="Open menu" onClick={() => setMobileNavOpen(true)}><Menu /></Button><span className="crumb">FIELD DESK</span><ChevronRight size={14} className="crumb-divider" /><span className="crumb-current">{NAV.find((item) => item.id === page)?.label ?? "Overview"}</span></div><div className="topbar-right"><span className="demo-label"><span className="demo-dot" /> DEMO SCORES</span><span className="user-chip"><span className="user-avatar">B</span><span className="user-name">Bukidnon grower</span><ChevronDown size={14} /></span></div></header>
+        <header className="topbar">
+          <div className="topbar-left">
+            <span className="crumb">FIELD DESK</span>
+            <ChevronRight size={14} className="crumb-divider" />
+            <span className="crumb-current">{NAV.find((item) => item.id === page)?.label ?? pageTitle[page] ?? "Overview"}</span>
+          </div>
+          <div className="topbar-right">
+            <span className="demo-label"><span className="demo-dot" /> DEMO SCORES</span>
+            <span className="user-chip"><span className="user-avatar">B</span><span className="user-name">Bukidnon grower</span></span>
+          </div>
+        </header>
         <div className="page-wrap">
           <div className="page-intro">
             <div>
@@ -271,6 +266,42 @@ function FieldShift() {
             )}
           </footer>
         </div>
+
+        <nav className="bottom-nav-dock" aria-label="Main navigation">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const isActive = page === item.id;
+            if (item.isCenter) {
+              return (
+                <button
+                  key={item.id}
+                  className={`bottom-nav-item bottom-nav-center ${isActive ? "bottom-nav-center-active" : ""}`}
+                  aria-label={item.label}
+                  onClick={() => goTo(item.id)}
+                >
+                  <span className="center-icon-wrap">
+                    <Icon size={22} strokeWidth={2.4} />
+                  </span>
+                  <span className="bottom-nav-label">{item.label}</span>
+                </button>
+              );
+            }
+            return (
+              <button
+                key={item.id}
+                className={`bottom-nav-item ${isActive ? "bottom-nav-active" : ""}`}
+                aria-label={item.label}
+                onClick={() => goTo(item.id)}
+              >
+                <span className="bottom-nav-icon">
+                  <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                  {item.id === "recovery" && <span className="nav-live-dot" />}
+                </span>
+                <span className="bottom-nav-label">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
       </main>
 
       <Dialog open={evidenceOpen} onOpenChange={setEvidenceOpen}>
