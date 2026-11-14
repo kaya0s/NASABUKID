@@ -28,6 +28,7 @@ function renderApp() {
       <App />
     </QueryClientProvider>,
   );
+  fireEvent.click(screen.getAllByRole("button", { name: "Open Field Desk" })[0]!);
 }
 describe("FieldShift planning workflows", () => {
   it("carries manually selected coordinates into the NASA request when the map is offline", async () => {

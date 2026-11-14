@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -43,7 +44,18 @@ export async function fetchCurrentWeather(
   const res = await fetch(url, { signal: signal ?? null });
   if (!res.ok) throw new Error("Could not load weather data.");
   const json = await res.json();
-  const current = json.current;
+  const current = z
+    .object({
+      temperature_2m: z.number().finite(),
+      apparent_temperature: z.number().finite(),
+      relative_humidity_2m: z.number().min(0).max(100),
+      precipitation: z.number().nonnegative(),
+      wind_speed_10m: z.number().nonnegative(),
+      weather_code: z.number().int(),
+      is_day: z.number().min(0).max(1),
+      time: z.string().min(1),
+    })
+    .parse(json.current);
   return {
     temperature: Math.round(current.temperature_2m),
     apparentTemperature: Math.round(current.apparent_temperature),
