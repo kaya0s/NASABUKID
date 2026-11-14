@@ -31,10 +31,11 @@ import {
   HeartHandshake,
   ImagePlus,
   Leaf,
+  Map as MapIcon,
   MapPin,
   Menu,
   MessageCircle,
-  Mountain,
+  LogOut,
   Plus,
   RotateCcw,
   Send,
@@ -51,6 +52,7 @@ import {
 } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import floodCorn from "@/assets/sample-flooded-corn.jpg";
+import heroFarmland from "@/assets/hero-farmland.jpg";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -101,11 +103,7 @@ export const Route = createFileRoute("/")({
   component: FieldShift,
 });
 
-<<<<<<< Updated upstream
-type Page = "overview" | "farm" | "prevention" | "recovery" | "evidence" | "chat";
-=======
-type Page = "landing" | "overview" | "farm" | "fullmap" | "prevention" | "recovery" | "evidence" | "chat";
->>>>>>> Stashed changes
+type Page = "landing" | "overview" | "farm" | "prevention" | "recovery" | "evidence" | "chat";
 type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
 type Farm = {
   place: string;
@@ -633,20 +631,14 @@ function FieldShift() {
           })}
         </nav>
         <div className="sidebar-foot">
-          <div className="guide-avatar">
-            <Mountain size={17} />
-          </div>
-          <div>
-            <span>BUKIDNON FIELD GUIDE</span>
-            <strong>Farmer-first, season-ready.</strong>
-          </div>
           <button
-            className="sidebar-help"
-            title="Get friendly, sample-based planning guidance"
-            aria-label="Get field guidance"
-            onClick={() => goTo("chat")}
+            type="button"
+            className="sidebar-logout-btn"
+            onClick={() => goTo("landing")}
+            title="Log out and return to landing page"
           >
-            <CircleHelp size={17} />
+            <LogOut size={16} strokeWidth={1.8} />
+            <span>Log out</span>
           </button>
         </div>
       </aside>
@@ -904,10 +896,6 @@ function FieldShift() {
             )}
           </footer>
         </div>
-<<<<<<< Updated upstream
-=======
-        )}
->>>>>>> Stashed changes
 
         <nav
           className="bottom-nav-dock"
@@ -1065,7 +1053,10 @@ function LandingPage({
       </header>
 
       {/* Hero Section */}
-      <section className="landing-hero-section">
+      <section
+        className="landing-hero-section landing-hero-photo"
+        style={{ backgroundImage: `url(${heroFarmland})` }}
+      >
         <div className="landing-hero-content">
           <div className="landing-badge">
             <span className="landing-badge-dot" />
@@ -1183,7 +1174,7 @@ function LandingPage({
         <div className="landing-features-grid">
           <div className="landing-feature-card">
             <div className="feature-card-icon map-icon">
-              <Map size={24} />
+              <MapIcon size={24} />
             </div>
             <span className="feature-category">SATELLITE & BOUNDARIES</span>
             <h3>Interactive Farm Mapping</h3>
