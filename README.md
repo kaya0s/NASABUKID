@@ -20,7 +20,7 @@ Scoring, scenario curves, thresholds, and adjustments remain pure typed demo log
 
 NASA POWER is regional gridded data (meteorological resolution approximately 0.5° × 0.625°), not an exact farm measurement. Historical weather does not establish the cause of crop injury or prove flooding. Financial estimates are gross revenue at risk using entered assumptions, excluding costs and insurance.
 
-NOAA ENSO ingestion, verified local crop rules, calendar-aware rotation constraints, validated loss ranges, and a Python agronomy backend are not implemented. No multimodal analysis or LLM is connected. Future model calls must use Lovable's backend gateway; never put `LOVABLE_API_KEY` in browser code.
+NOAA ENSO ingestion, verified local crop rules, calendar-aware rotation constraints, validated loss ranges, and a Python agronomy backend are not implemented. The Field Advisor uses Gemini to explain demo inputs; it does not analyze photos or provide verified agricultural advice.
 
 ## Run locally
 
@@ -28,6 +28,8 @@ NOAA ENSO ingestion, verified local crop rules, calendar-aware rotation constrai
 npm install
 npm run dev
 ```
+
+Set `GEMINI_API_KEY` in the Git-ignored `.env` file before using the Field Advisor locally. The server reads it at startup; restart `npm run dev` after changing it. A local Cloudflare Worker preview reads `.output/server/.dev.vars`; link that ignored file to `../../.env` when using Wrangler.
 
 ```sh
 npm test
