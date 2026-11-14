@@ -510,7 +510,7 @@ function FieldShift() {
       const response = await fetch("/api/advisor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(65_000),
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error(await response.text());

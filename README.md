@@ -12,7 +12,7 @@ A NASA Space Apps decision-support prototype for crop planning and recovery in B
 - In-memory historical request caching for 24 hours through React Query. Requests time out after 45 seconds; failed requests show an error without substituting sample data.
 - Three illustrative crop sequences. Demo scores respond to reported pH, drainage, and irrigation. A complete historical calendar year can optionally supply planting-month rainfall to the demo water rating. Changing location or scenario clears the applied historical context.
 - Recovery weather lookup around the entered event date, editable expected yield and price, and gross revenue-at-risk calculation. Planned next planting and drainage update the planner; the damaged crop’s actual planting date is separate.
-- Photos remain browser-only previews. The advisor receives bounded conversation history, structured event details, explicit uncertainty, and server-calculated loss through Lovable’s AI gateway.
+- Photos remain browser-only previews. The advisor receives bounded conversation history, structured event details, explicit uncertainty, and server-calculated loss directly through Google’s Gemini API.
 
 ## Scientific limits
 
@@ -20,7 +20,7 @@ Scoring, scenario curves, thresholds, and adjustments remain pure typed demo log
 
 NASA POWER is regional gridded data (meteorological resolution approximately 0.5° × 0.625°), not an exact farm measurement. Historical weather does not establish the cause of crop injury or prove flooding. Financial estimates are gross revenue at risk using entered assumptions, excluding costs and insurance.
 
-NOAA ENSO ingestion, verified local crop rules, calendar-aware rotation constraints, validated loss ranges, and a Python agronomy backend are not implemented. The Field Advisor uses Gemini through Lovable’s gateway to explain demo inputs; it does not analyze photos or provide verified agricultural advice.
+NOAA ENSO ingestion, verified local crop rules, calendar-aware rotation constraints, validated loss ranges, and a Python agronomy backend are not implemented. The Field Advisor uses Gemini directly through Google’s Gemini API to explain demo inputs; it does not analyze photos or provide verified agricultural advice.
 
 ## Run locally
 
@@ -29,7 +29,7 @@ npm install
 npm run dev
 ```
 
-Enable AI in Lovable and provision its managed `LOVABLE_API_KEY` for the server runtime before using the Field Advisor. Never put credentials in browser code or Git. The server reads it at startup; restart `npm run dev` after changing it. A local Cloudflare Worker preview reads `.output/server/.dev.vars`; link that ignored file to `../../.env` when using Wrangler.
+Create a key in [Google AI Studio](https://aistudio.google.com/apikey), then set `GEMINI_API_KEY=your_key` in your Git-ignored `.env` file. Restart `npm run dev` after changing it. Keep the key server-side; never use a `VITE_` prefix. For production, set the key in your host’s environment and run `npm run build` followed by `npm start`.
 
 ```sh
 npm test
@@ -43,7 +43,9 @@ NASA documentation: https://power.larc.nasa.gov/docs/services/api/temporal/daily
 
 OpenStreetMap tile policy: https://operations.osmfoundation.org/policies/tiles/
 
-This project is connected to [Lovable](https://lovable.dev/projects/9730bab0-4b69-47e4-a512-17a1a16a2994). Keep published Git history intact and follow `AGENTS.md` for generated files, database changes, secrets, and AI gateway requirements.
+The app runs independently with Vite, TanStack Start and Nitro on Node.js. Keep published Git history intact and follow `AGENTS.md`.
+
+To stop the previous Lovable GitHub sync, a project admin must open Lovable → Project settings → Git → GitHub → repository dropdown → Disconnect. This repository change cannot revoke that external account connection.
 
 Public farm context sources: https://github.com/komoot/photon (OpenStreetMap contributors, ODbL) and https://docs.isric.org/globaldata/soilgrids/SoilGrids_faqs_01.html (ISRIC SoilGrids, CC BY 4.0).
 
