@@ -107,7 +107,7 @@ export default {
               signal: AbortSignal.timeout(60_000),
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
               body: JSON.stringify({
-                model: "gemini-3.8-flash",
+                model: "gemini-3.1-flash-lite",
                 messages,
                 reasoning_effort: "low",
                 max_tokens: 1500,

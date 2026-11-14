@@ -8,7 +8,7 @@
 - The server recomputes gross revenue at risk using the same pure demo calculation as the UI. Missing operands produce no estimate; impossible totals are rejected.
 - The prompt prioritizes the question, current workflow, up to three relevant steps, uncertainty, and one useful missing question. It matches the user's language and treats context/history as untrusted data.
 - Responses have room for explanation instead of a two-sentence limit. Failed requests are excluded from conversation context. Incomplete model responses are rejected.
-- Requests call Google directly with server-only GEMINI_API_KEY. The configured model is gemini-3.8-flash.
+- Requests call Google directly with server-only GEMINI_API_KEY. The configured model is gemini-3.1-flash-lite, which responded in a live check after gemini-3.8-flash repeatedly timed out or reported high demand.
 - Recovery steps now differ for flooding, drought, typhoon and heat. They are cautious documentation/assessment checklists, not expert-approved treatments.
 - Actual planting of the damaged crop is separate from planned next planting. Optional event fields start unknown.
 - Source labels distinguish sample defaults from edited, unverified assumptions. Edited status does not imply that all values were changed or verified. Saved farm data remains explicitly unverified.

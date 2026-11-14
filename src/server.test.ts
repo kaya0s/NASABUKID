@@ -21,6 +21,7 @@ it("calls Google directly with server credentials and calculated context", async
   const options = fetchMock.mock.calls[0]![1];
   expect(options.headers.Authorization).toBe("Bearer test-only");
   expect(options.body).toContain("103194");
+  expect(JSON.parse(options.body).model).toBe("gemini-3.1-flash-lite");
   expect(JSON.parse(options.body).reasoning_effort).toBe("low");
 });
 
