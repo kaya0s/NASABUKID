@@ -10,8 +10,8 @@ import {
   Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, Bot,
   CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, CloudDrizzle, CloudSun,
   Compass, Droplets, FileText, FlaskConical, Flower2, HeartHandshake, ImagePlus, Leaf,
-  MapPin, Menu, MessageCircle, Mountain, RotateCcw, Send, ShieldCheck, Sprout, Sun,
-  Thermometer, Upload, Waves, Wind, X,
+  MapPin, Menu, MessageCircle, Mountain, Plus, RotateCcw, Send, ShieldCheck, Sprout, Sun,
+  Thermometer, Upload, Waves, Wheat, Wind, X,
 } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import floodCorn from "@/assets/sample-flooded-corn.jpg";
@@ -47,10 +47,10 @@ type Page = "overview" | "farm" | "prevention" | "recovery" | "evidence" | "chat
 type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
 type Farm = { place: string; area: string; crop: string; previous: string; ph: string; soil: string; irrigation: string; drainage: string; planted: string };
 type ChatMessage = { role: "assistant" | "user"; text: string };
-const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; section: string }> = [
+const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; section: string; isCenter?: boolean }> = [
   { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
   { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
-  { id: "prevention", label: "Crop planning", icon: Flower2, section: "WORKSPACE" },
+  { id: "prevention", label: "Crop planning", icon: Wheat, section: "WORKSPACE", isCenter: true },
   { id: "recovery", label: "Damage recovery", icon: HeartHandshake, section: "WORKSPACE" },
   { id: "evidence", label: "Evidence & sources", icon: FileText, section: "INSIGHTS" },
   { id: "chat", label: "Field advisor", icon: MessageCircle, section: "INSIGHTS" },
@@ -73,7 +73,21 @@ const HAZARD_RATES: Record<Hazard, { affected: number; yieldLoss: number; observ
 };
 const PHP = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(max-width: 780px)");
+    const onChange = () => setIsMobile(mql.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isMobile;
+}
+
 function FieldShift() {
+  const isMobile = useIsMobile();
   const [page, setPage] = useState<Page>("overview");
   const [farm, setFarm] = useState<Farm>(SEED_FARM);
   const [stored, setStored] = useState(false);
@@ -208,22 +222,56 @@ function FieldShift() {
 
   return (
     <div className="app-shell">
-      {mobileNavOpen && <button className="mobile-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
-      <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
-        <div className="brand"><div className="brand-mark"><Sprout size={21} strokeWidth={1.8} /></div><div><span className="brand-name">fieldshift<span className="brand-ai">ai</span></span><span className="brand-caption">GROW WITH CONFIDENCE</span></div><button className="sidebar-close" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}><X size={18} /></button></div>
+      <aside className="sidebar" aria-hidden={isMobile ? "true" : undefined}>
+        <div className="brand">
+          <div className="brand-mark"><Sprout size={21} strokeWidth={1.8} /></div>
+          <div>
+            <span className="brand-name">fieldshift<span className="brand-ai">ai</span></span>
+            <span className="brand-caption">GROW WITH CONFIDENCE</span>
+          </div>
+        </div>
         <div className="workspace-label">YOUR FIELD DESK <ChevronDown size={14} /></div>
-        <div className="sidebar-location"><MapPin size={15} /><div><strong>{farm.place}</strong><span>Selected farm reference</span></div><span className="location-dot" /></div>
+        <div className="sidebar-location">
+          <MapPin size={15} />
+          <div><strong>{farm.place}</strong><span>Selected farm reference</span></div>
+          <span className="location-dot" />
+        </div>
         <nav className="main-nav" aria-label="Main navigation">
           {NAV.map((item, index) => {
             const Icon = item.icon;
-            return <div key={item.id}>{(index === 0 || NAV[index - 1]?.section !== item.section) && <span className="nav-section">{item.section}</span>}<button className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => goTo(item.id)}><Icon size={17} strokeWidth={1.8} /><span>{item.label}</span>{item.id === "recovery" && <span className="nav-live-dot" />}</button></div>;
+            return (
+              <div key={item.id}>
+                {(index === 0 || NAV[index - 1]?.section !== item.section) && (
+                  <span className="nav-section">{item.section}</span>
+                )}
+                <button
+                  className={`nav-item ${page === item.id ? "nav-item-active" : ""}`}
+                  onClick={() => goTo(item.id)}
+                >
+                  <Icon size={17} strokeWidth={1.8} />
+                  <span>{item.label}</span>
+                  {item.id === "recovery" && <span className="nav-live-dot" />}
+                </button>
+              </div>
+            );
           })}
         </nav>
-        <div className="sidebar-foot"><div className="guide-avatar"><Mountain size={17} /></div><div><span>BUKIDNON FIELD GUIDE</span><strong>Farmer-first, season-ready.</strong></div><button className="sidebar-help" title="Get friendly, sample-based planning guidance" aria-label="Get field guidance" onClick={() => goTo("chat")}><CircleHelp size={17} /></button></div>
+        <div className="sidebar-foot">
+          <div className="guide-avatar"><Mountain size={17} /></div>
+          <div><span>BUKIDNON FIELD GUIDE</span><strong>Farmer-first, season-ready.</strong></div>
+          <button className="sidebar-help" title="Get friendly, sample-based planning guidance" aria-label="Get field guidance" onClick={() => goTo("chat")}>
+            <CircleHelp size={17} />
+          </button>
+        </div>
       </aside>
 
       <main className="main-area">
-        <header className="topbar"><div className="topbar-left"><Button size="icon" variant="ghost" className="mobile-menu" aria-label="Open menu" onClick={() => setMobileNavOpen(true)}><Menu /></Button><span className="crumb">FIELD DESK</span><ChevronRight size={14} className="crumb-divider" /><span className="crumb-current">{NAV.find((item) => item.id === page)?.label ?? "Overview"}</span></div><div className="topbar-right"><span className="demo-label"><span className="demo-dot" /> DEMO SCORES</span><span className="user-chip"><span className="user-avatar">B</span><span className="user-name">Bukidnon grower</span><ChevronDown size={14} /></span></div></header>
+        <header className="topbar">
+          <div className="user-chip">
+            <span className="user-avatar">B</span>
+            <span className="user-name">Bukidnon grower</span>
+          </div>
+        </header>
         <div className="page-wrap">
           <div className="page-intro">
             <div>
@@ -256,19 +304,9 @@ function FieldShift() {
           {page === "farm" && <FarmPage farm={farm} location={location} boundary={boundary} onBoundary={updateBoundary} onLocation={updateLocation} onUpdate={updateFarm} onContinue={() => goTo("prevention")} />}
           <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
           {page === "prevention" && <>
-            <PreventionPage farm={farm} historical={historical} scenario={scenario} setScenario={(next) => { setScenario(next); setHistorical(null); }} rotations={rotations} selected={selectedRotation} setSelected={setSelectedRotation} onEvidence={(id) => { setEvidenceRotation(id); setEvidenceOpen(true); }} onChat={() => goTo("chat")} onEvidencePage={() => goTo("evidence")} />
-            {historical && <div className="note-strip"><ShieldCheck size={16} /><span>Applied historical rainfall records ({historical.start} to {historical.end}) to water calculation.</span><button onClick={() => setHistorical(null)}>Clear</button></div>}
-            <section className="historical-weather-drawer">
-              <div className="section-title-row">
-                <div>
-                  <span className="eyebrow"><CloudSun size={13} /> CLIMATE & WEATHER HISTORY</span>
-                  <h2>Monthly Rainfall & Temperature Records</h2>
-                  <p>Historical weather records for your farm coordinates to cross-reference seasonal water availability.</p>
-                </div>
-              </div>
-              <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
-            </section>
-          </>}
+            <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
+            {historical && <div className="note-strip"><ShieldCheck size={16} /><span>Demo water context: actual NASA rainfall from {historical.start} to {historical.end}, using your planting month. Other ratings and thresholds remain illustrative. The charts above show the selected NASA year.</span><button onClick={() => setHistorical(null)}>Clear historical context</button></div>}
+            <PreventionPage farm={farm} historical={historical} scenario={scenario} setScenario={(next) => { setScenario(next); setHistorical(null); }} rotations={rotations} selected={selectedRotation} setSelected={setSelectedRotation} onEvidence={(id) => { setEvidenceRotation(id); setEvidenceOpen(true); }} onChat={() => goTo("chat")} onEvidencePage={() => goTo("evidence")} /></>}
           {page === "recovery" && <RecoveryPage farm={farm} hazard={hazard} setHazard={changeHazard} damageDate={damageDate} setDamageDate={setDamageDate} affected={affected} setAffected={setAffected} yieldLoss={yieldLoss} setYieldLoss={setYieldLoss} price={price} setPrice={setPrice} expectedYield={expectedYield} setExpectedYield={setExpectedYield} validLossInputs={validLossInputs} onUpdateFarm={updateFarm} location={location} photo={photo} pickPhoto={pickPhoto} uploadRef={uploadRef} loss={loss} onPlan={() => goTo("prevention")} onChat={() => goTo("chat")} />}
           {page === "evidence" && <EvidencePage rotations={rotations} scenario={scenario} selected={evidenceRotation} setSelected={setEvidenceRotation} onChat={() => goTo("chat")} />}
           {page === "chat" && <ChatPage farm={farm} messages={chatMessages} input={chatInput} setInput={setChatInput} onSend={sendQuestion} onSuggestion={sendQuestion} scenario={scenario} rotation={activeRotation.name} hazard={hazard} loss={lossLabel} />}
@@ -281,6 +319,42 @@ function FieldShift() {
             )}
           </footer>
         </div>
+
+        <nav className="bottom-nav-dock" aria-label="Mobile navigation" aria-hidden={!isMobile ? "true" : undefined}>
+          {NAV.filter((item) => item.id !== "evidence").map((item) => {
+            const Icon = item.icon;
+            const isActive = page === item.id;
+            if (item.isCenter) {
+              return (
+                <button
+                  key={item.id}
+                  className={`bottom-nav-item bottom-nav-center ${isActive ? "bottom-nav-center-active" : ""}`}
+                  aria-label={item.label}
+                  onClick={() => goTo(item.id)}
+                >
+                  <span className="center-icon-wrap">
+                    <Icon size={22} strokeWidth={2.4} />
+                  </span>
+                  <span className="bottom-nav-label">{item.label}</span>
+                </button>
+              );
+            }
+            return (
+              <button
+                key={item.id}
+                className={`bottom-nav-item ${isActive ? "bottom-nav-active" : ""}`}
+                aria-label={item.label}
+                onClick={() => goTo(item.id)}
+              >
+                <span className="bottom-nav-icon">
+                  <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                  {item.id === "recovery" && <span className="nav-live-dot" />}
+                </span>
+                <span className="bottom-nav-label">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
       </main>
 
       <Dialog open={evidenceOpen} onOpenChange={setEvidenceOpen}>
@@ -321,7 +395,7 @@ function OverviewPage({
       {/* Quick Actions Row */}
       <div className="agri-quick-actions">
         <Button size="lg" className="agri-btn-primary" onClick={onPrevention}>
-          <Sprout size={18} /> Plan My Crops
+          <Wheat size={18} /> Plan My Crops
         </Button>
         <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
           <MessageCircle size={18} /> Ask Advisor
@@ -421,188 +495,12 @@ function FarmPage({ farm, location, boundary, onBoundary, onLocation, onUpdate, 
   </div>;
 }
 
-const CROP_ICONS: Record<string, string> = {
-  Corn: "🌽",
-  Mungbean: "🌱",
-  Sorghum: "🌾",
-  "Sweet potato": "🍠",
-  Cassava: "🥔",
-  Rice: "🌾",
-};
-
-function PreventionPage({
-  farm,
-  historical: _historical,
-  scenario,
-  setScenario,
-  rotations,
-  selected,
-  setSelected,
-  onEvidence,
-  onChat,
-  onEvidencePage: _onEvidencePage,
-}: {
-  farm: Farm;
-  historical: HistoricalWeather | null;
-  scenario: ClimateScenario;
-  setScenario: (scenario: ClimateScenario) => void;
-  rotations: ReturnType<typeof rotationsForScenario>;
-  selected: string;
-  setSelected: (id: string) => void;
-  onEvidence: (id: string) => void;
-  onChat: () => void;
-  onEvidencePage: () => void;
-}) {
-  return (
-    <>
-      <div className="scenario-toolbar">
-        <div className="scenario-copy">
-          <span className="scenario-indicator">
-            <CloudSun size={20} />
-          </span>
-          <div>
-            <strong>Seasonal Climate Scenario</strong>
-            <span>Select the expected seasonal condition for your upcoming planting cycle:</span>
-          </div>
-        </div>
-        <div className="scenario-tabs" role="tablist" aria-label="Climate scenarios">
-          {SCENARIOS.map((value) => (
-            <button
-              key={value}
-              role="tab"
-              aria-selected={scenario === value}
-              className={scenario === value ? "scenario-active" : ""}
-              onClick={() => setScenario(value)}
-            >
-              {value === "Typical" ? (
-                <CloudSun size={15} />
-              ) : value === "El Niño-like" ? (
-                <Sun size={15} />
-              ) : (
-                <CloudDrizzle size={15} />
-              )}
-              {value === "Typical" ? "Typical Season" : value === "El Niño-like" ? "El Niño (Dry)" : "Wet Season"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <section className="rotation-section">
-        <div className="section-title-row">
-          <div>
-            <span className="eyebrow">CROP ROTATION OPTIONS</span>
-            <h2>Recommended Crop Sequences</h2>
-            <p>
-              Optimized three-season plans to rebuild soil nitrogen, conserve moisture, and balance farm income.
-            </p>
-          </div>
-        </div>
-
-        <div className="rotation-grid">
-          {rotations.map((rotation, index) => {
-            const research = ROTATION_RESEARCH[rotation.id];
-            return (
-              <article
-                key={rotation.id}
-                className={`rotation-card ${selected === rotation.id ? "rotation-selected" : ""}`}
-              >
-                <div className="rotation-card-top">
-                  <span className="rotation-rank">
-                    <span>{String(index + 1).padStart(2, "0")}</span>{" "}
-                    {index === 0 ? "RECOMMENDED" : "ALTERNATIVE"}
-                  </span>
-                  <button
-                    className={`rotation-select ${selected === rotation.id ? "rotation-select-on" : ""}`}
-                    aria-label={`${selected === rotation.id ? "Selected" : "Select"}: ${rotation.name}`}
-                    onClick={() => setSelected(rotation.id)}
-                  >
-                    {selected === rotation.id ? <Check size={14} /> : <span />}
-                  </button>
-                </div>
-
-                <h3>{rotation.name}</h3>
-
-                <div className="crop-sequence-chips" aria-label="Crop sequence order">
-                  {rotation.sequence.map((crop, cIdx) => (
-                    <span key={crop} className="crop-seq-step">
-                      <span className="crop-seq-pill">
-                        <span className="crop-emoji" aria-hidden="true">{CROP_ICONS[crop] || "🌱"}</span>
-                        {crop}
-                      </span>
-                      {cIdx < rotation.sequence.length - 1 && (
-                        <span className="crop-seq-next" aria-hidden="true">→</span>
-                      )}
-                    </span>
-                  ))}
-                </div>
-
-                <p className="rotation-note">{rotation.note}</p>
-
-                <div className="rotation-score">
-                  <div className="score-badge-wrap">
-                    <span className="score-number">
-                      {rotation.total}
-                      <small> / 100</small>
-                    </span>
-                    <span className="score-label">MATCH SCORE</span>
-                  </div>
-                  <ScoreRing score={rotation.total} />
-                  <div className="rotation-rank-caption">
-                    {index === 0 ? "★ TOP MATCH FOR YOUR FIELD" : "SUITABLE ROTATION"}
-                  </div>
-                </div>
-
-                <details className="rotation-factors-details" open={index === 0}>
-                  <summary className="factors-toggle-summary">
-                    <span>Scoring factors & agronomy breakdown</span>
-                    <ChevronDown size={15} className="factors-chevron" />
-                  </summary>
-                  <div className="factors-detail-panel">
-                    <ScoreBreakdown scores={rotation.scores} />
-                    {research && (
-                      <div className="rotation-rationale">
-                        <Sprout size={16} />
-                        <span>{research.rationale}</span>
-                      </div>
-                    )}
-                    {rotation.id === "root-crop" && farm.drainage && farm.drainage !== "Good" && (
-                      <div className="rotation-caution-badge">
-                        <strong>Drainage note:</strong> Current field drainage is {farm.drainage}. Sweet potato requires well-drained soil to avoid root rot.
-                      </div>
-                    )}
-                  </div>
-                </details>
-
-                <div className="rotation-actions">
-                  <Button
-                    variant={selected === rotation.id ? "default" : "outline"}
-                    size="sm"
-                    className={selected === rotation.id ? "plan-selected-btn" : ""}
-                    onClick={() => setSelected(rotation.id)}
-                  >
-                    {selected === rotation.id ? <><Check size={14} /> Selected</> : "Select Plan"}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => onEvidence(rotation.id)}>
-                    <FileText size={14} /> Details
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={onChat}>
-                    <MessageCircle size={14} /> Advisor
-                  </Button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        <div className="scoring-note">
-          <ShieldCheck size={20} />
-          <span>
-            <strong>Scoring Weights:</strong> Water efficiency 30% · Soil health 30% · Farm income 25% · Climate resilience 15%.
-          </span>
-        </div>
-      </section>
-    </>
-  );
+function PreventionPage({ farm, historical, scenario, setScenario, rotations, selected, setSelected, onEvidence, onChat, onEvidencePage }: { farm: Farm; historical: HistoricalWeather | null; scenario: ClimateScenario; setScenario: (scenario: ClimateScenario) => void; rotations: ReturnType<typeof rotationsForScenario>; selected: string; setSelected: (id: string) => void; onEvidence: (id: string) => void; onChat: () => void; onEvidencePage: () => void }) {
+  return <>
+    <div className="scenario-toolbar"><div className="scenario-copy"><span className="scenario-indicator"><Activity size={15} /></span><div><strong>Explore demo scoring assumptions.</strong><span>NASA charts above use actual records; these scenarios apply only to demo scores.</span></div></div><div className="scenario-tabs" role="tablist" aria-label="Climate scenarios">{SCENARIOS.map((value) => <button key={value} role="tab" aria-selected={scenario === value} className={scenario === value ? "scenario-active" : ""} onClick={() => setScenario(value)}>{value === "Typical" ? <CloudSun size={14} /> : value === "El Niño-like" ? <Sun size={14} /> : <CloudDrizzle size={14} />}{value}</button>)}</div></div>
+    <div className="scenario-footnote"><span>DEMO SCORING ASSUMPTIONS ONLY</span><span>These tabs adjust sample ratings. They do not change NASA observations or classify historical ENSO.</span><span>NOT A FORECAST</span></div>
+    <section className="rotation-section"><div className="section-title-row"><div><span className="eyebrow">THREE WAYS TO ROTATE</span><h2>A season plan worth considering.</h2><p>Published research explains why each option is worth considering. The order still comes from demo scores, not a validated comparison of these sequences.</p></div><Button variant="outline" onClick={onEvidencePage}><FileText size={15} /> All scoring evidence</Button></div><div className="rotation-grid">{rotations.map((rotation, index) => <article key={rotation.id} className={`rotation-card ${selected === rotation.id ? "rotation-selected" : ""}`}><div className="rotation-card-top"><span className="rotation-rank"><span>{String(index + 1).padStart(2, "0")}</span> SAMPLE PICK</span><button className={`rotation-select ${selected === rotation.id ? "rotation-select-on" : ""}`} aria-label={`${selected === rotation.id ? "Selected" : "Select"}: ${rotation.name}`} onClick={() => setSelected(rotation.id)}>{selected === rotation.id ? <Check size={14} /> : <span />}</button></div><h3>{rotation.name}</h3><p className="rotation-note">{rotation.note}</p><div className="rotation-score"><span className="score-number">{rotation.total}<small> / 100</small></span><ScoreRing score={rotation.total} /><div className="rotation-rank-caption">{index === 0 ? "HIGHEST SAMPLE SCORE" : "ALTERNATIVE ROTATION"}</div></div><ScoreBreakdown scores={rotation.scores} /><RotationResearch rotationId={rotation.id} drainage={farm.drainage} /><RotationEvidence rotation={rotation} farm={farm} historical={historical} /><div className="rotation-actions"><Button variant="outline" size="sm" onClick={() => onEvidence(rotation.id)}><FileText size={14} /> View evidence</Button><Button variant="ghost" size="sm" onClick={onChat}><MessageCircle size={14} /> Ask the advisor</Button></div></article>)}</div><div className="scoring-note"><ShieldCheck size={16} /><span><strong>Transparent sample scoring.</strong> Weights are water 30%, soil 30%, income 25%, climate resilience 15%. The displayed total is calculated from these weights and scenario-adjusted demo scores.</span></div></section>
+  </>;
 }
 
 function RecoveryPage({ farm, hazard, setHazard, damageDate, setDamageDate, affected, setAffected, yieldLoss, setYieldLoss, photo, pickPhoto, uploadRef, loss, onPlan, onChat, price, setPrice, expectedYield, setExpectedYield, validLossInputs, location, onUpdateFarm }: { onUpdateFarm: (key: keyof Farm, value: string) => void; price: string; setPrice: (value: string) => void; expectedYield: string; setExpectedYield: (value: string) => void; validLossInputs: boolean; location: Coordinates; farm: Farm; hazard: Hazard; setHazard: (hazard: Hazard) => void; damageDate: string; setDamageDate: (date: string) => void; affected: number; setAffected: (value: number) => void; yieldLoss: number; setYieldLoss: (value: number) => void; photo: { src: string; name: string; sample: boolean }; pickPhoto: (file?: File) => void; uploadRef: React.RefObject<HTMLInputElement | null>; loss: number; onPlan: () => void; onChat: () => void }) {
