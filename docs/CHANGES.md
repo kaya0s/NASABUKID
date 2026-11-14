@@ -13,7 +13,7 @@
 - Actual planting of the damaged crop is separate from planned next planting. Optional event fields start unknown.
 - Source labels distinguish sample defaults from edited, unverified assumptions. Edited status does not imply that all values were changed or verified. Saved farm data remains explicitly unverified.
 - Planning displays missing-evidence review flags before the existing demo comparison. These flags are not scientific crop exclusions.
-- Added pure offline yield evaluation metrics and contract tests. No dependencies, database migrations or generated files changed.
+- Added pure    offline yield evaluation metrics and contract tests. No dependencies, database migrations or generated files changed.
 
 ## Operational setup
 

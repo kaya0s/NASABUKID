@@ -16,7 +16,7 @@ import {
 import { measureFarmBoundary } from "@/lib/farm-boundary";
 import { checkFarmLandUse, type LandUseCheckResult } from "@/lib/farm-context";
 import { RECOVERY_STEPS } from "@/lib/advisor";
-import { calculateEstimatedLoss } from "@/lib/fieldshift-demo";
+import { calculateEstimatedLoss, type RecoveryHazard } from "@/lib/fieldshift-demo";
 import {
   fetchRecentModisNdvi,
   summarizeWeather,
@@ -28,7 +28,7 @@ import {
 type MapStyle = "satellite" | "street";
 type HeatmapLayer = "none" | "lst" | "soil_moisture" | "ndvi";
 type AdvisoryMode = "rotation" | "recovery";
-type HazardType = "Flooding" | "Drought" | "Typhoon" | "Heat";
+type HazardType = RecoveryHazard;
 const ENABLE_FARM_LOT_VERIFICATION = false;
 const SHOW_COMPACT_RECOVERY_UI = false;
 const ENABLE_RECOVERY_MODAL = false;
@@ -56,6 +56,11 @@ const RECOVERY_HAZARDS: Record<
     icon: ThermometerSun,
     summary: "Monitor topsoil heat, leaf scorch, and midday wilting on exposed slopes.",
     replantNote: "Cover crops or heat-tolerant varieties help protect exposed topsoil.",
+  },
+  "Human-caused": {
+    icon: ShieldAlert,
+    summary: "Record what happened and document visible damage from a safe location.",
+    replantNote: "Seek a local assessment before treating the field or deciding to replant.",
   },
 };
 
@@ -315,16 +320,18 @@ function createBaseLayer(L: Leaflet, style: MapStyle, onTileError: () => void): 
       subdomains: ["0", "1", "2", "3"],
       maxNativeZoom: 20,
       maxZoom: 21,
-      keepBuffer: 4,
+      keepBuffer: 6,
       updateWhenZooming: false,
+      updateWhenIdle: true,
       attribution: "Map data &copy; Google",
     }).on("tileerror", onTileError);
   }
   return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxNativeZoom: 19,
     maxZoom: 21,
-    keepBuffer: 4,
+    keepBuffer: 6,
     updateWhenZooming: false,
+    updateWhenIdle: true,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).on("tileerror", onTileError);
 }
@@ -340,8 +347,9 @@ function createHeatmapLayer(
     maxZoom: 21,
     opacity: 0.68,
     zIndex: 4,
-    keepBuffer: 2,
+    keepBuffer: 4,
     updateWhenZooming: false,
+    updateWhenIdle: true,
     attribution: "NASA GIBS",
   }).on("tileerror", onTileError);
 }
@@ -443,18 +451,6 @@ export type FarmProfileData = {
   planted: string;
 };
 
-const DEFAULT_CROP_OPTIONS = [
-  "Pineapple",
-  "Banana",
-  "Sugar Cane",
-  "Corn",
-  "Rice",
-  "Mungbean",
-  "Sweet potato",
-  "Cassava",
-] as const;
-const DEFAULT_PREVIOUS_CROP_OPTIONS = [...DEFAULT_CROP_OPTIONS, "Fallow"] as const;
-
 export function FullFarmMap({
   location,
   onChange,
@@ -490,8 +486,6 @@ export function FullFarmMap({
   historical = null,
   climateLoading = false,
   terrain = null,
-  cropOptions = DEFAULT_CROP_OPTIONS,
-  previousCropOptions = DEFAULT_PREVIOUS_CROP_OPTIONS,
 }: {
   location: Coordinates;
   onChange: (point: Coordinates) => void;
@@ -527,8 +521,6 @@ export function FullFarmMap({
   historical?: HistoricalWeather | null;
   climateLoading?: boolean;
   terrain?: { elevation: number; slopePercent: number } | null;
-  cropOptions?: readonly string[];
-  previousCropOptions?: readonly string[];
 }) {
   const [mapStyle, setMapStyle] = useState<MapStyle>("satellite");
   const [heatmap, setHeatmap] = useState<HeatmapLayer>("none");
@@ -547,7 +539,7 @@ export function FullFarmMap({
   const [radiusMeters, setRadiusMeters] = useState(100);
   const radiusRef = useRef(radiusMeters);
   radiusRef.current = radiusMeters;
-  const [profileOpen, setProfileOpen] = useState(true);
+  const [profileOpen, setProfileOpen] = useState(() => advisoryMode === "recovery");
   const [farmCardOpen, setFarmCardOpen] = useState(() => boundary.length >= 3);
   const [drawerTab, setDrawerTab] = useState<"rotation" | "recovery">(
     !ENABLE_RECOVERY_MODAL && advisoryMode === "recovery" ? "recovery" : "rotation",
@@ -589,7 +581,6 @@ export function FullFarmMap({
       setRecoveryModalOpen(false);
       setDrawerTab("rotation");
     }
-    setProfileOpen(true);
   }, [advisoryMode]);
 
   useEffect(() => {
@@ -1593,44 +1584,6 @@ export function FullFarmMap({
                 </div>
 
                 <div className="form-field">
-                  <Label htmlFor="map-plant-date">Planned next planting</Label>
-                  <Input
-                    id="map-plant-date"
-                    type="date"
-                    value={farm.planted}
-                    onChange={(e) => onUpdateFarm("planted", e.target.value)}
-                  />
-                </div>
-
-                <div className="form-field">
-                  <Label htmlFor="map-current-crop">Current crop</Label>
-                  <select
-                    id="map-current-crop"
-                    className="form-select"
-                    value={farm.crop}
-                    onChange={(e) => onUpdateFarm("crop", e.target.value)}
-                  >
-                    {cropOptions.map((crop) => (
-                      <option key={crop}>{crop}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-field">
-                  <Label htmlFor="map-previous-crop">Previous crop</Label>
-                  <select
-                    id="map-previous-crop"
-                    className="form-select"
-                    value={farm.previous}
-                    onChange={(e) => onUpdateFarm("previous", e.target.value)}
-                  >
-                    {previousCropOptions.map((crop) => (
-                      <option key={crop}>{crop}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-field">
                   <Label htmlFor="map-soil-type">Soil texture / type</Label>
                   <Input
                     id="map-soil-type"
@@ -1888,11 +1841,11 @@ export function FullFarmMap({
                 <div className="drawer-badges-row">
                   <span className="drawer-badge-nasa">
                     {drawerTab === "recovery"
-                      ? "REGIONAL DATA · DEMO ESTIMATE"
-                      : "REGIONAL DATA · DEMO OPTIONS"}
+                      ? "HISTORICAL EVENT CONTEXT"
+                      : "NASA POWER · 10-YEAR HISTORY"}
                   </span>
                   <span className="drawer-badge-engine">
-                    {drawerTab === "recovery" ? "Recovery Engine" : "Rotation Engine"}
+                    {drawerTab === "recovery" ? "Recovery Planning" : "Crop Planning"}
                   </span>
                   {historical?.sourceUrl && (
                     <a
@@ -2070,7 +2023,7 @@ export function FullFarmMap({
                       <>
                         <div className="drawer-recovery-section">
                           <div className="drawer-sequence-heading">WHAT HAPPENED ON THIS FIELD?</div>
-                          <div className="drawer-hazard-grid" role="group" aria-label="Select weather event">
+                          <div className="drawer-hazard-grid" role="group" aria-label="Select event type">
                             {(Object.keys(RECOVERY_HAZARDS) as HazardType[]).map((item) => {
                               const Icon = RECOVERY_HAZARDS[item].icon;
                               const active = activeHazard === item;

@@ -135,7 +135,7 @@ export function AdvisorChat({
           </p>
         )}
       </div>
-      {messages.length === 1 && (
+      {messages.length <= 1 && (
         <div className="advisor-chat-questions" aria-label="Suggested questions">
           {QUESTIONS[workflow].map((question) => (
             <button key={question} type="button" disabled={busy} onClick={() => onSend(question)}>
