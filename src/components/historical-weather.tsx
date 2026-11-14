@@ -62,17 +62,12 @@ export function HistoricalWeatherPanel({
     <section className="panel historical-panel">
       <div className="panel-top">
         <div>
-          <span className="panel-eyebrow">NASA POWER · HISTORICAL OBSERVATIONS</span>
+          <span className="panel-eyebrow">WEATHER OBSERVATIONS</span>
           <h2>
-            {eventDate ? "Weather around the reported event" : "Explore actual historical weather"}
+            {eventDate ? "Weather Around Event Date" : "Historical Seasonal Weather"}
           </h2>
         </div>
-        <span className="sample-chip">{data ? "NASA RECORDS" : "NOT YET LOADED"}</span>
       </div>
-      <p className="historical-copy">
-        {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}° · Regional grid data, not
-        a farm measurement or forecast. These records are not real-time weather.
-      </p>
       {monthlyCharts ? (
         <div className="weather-form">
           <div>
@@ -99,7 +94,7 @@ export function HistoricalWeatherPanel({
             disabled={query.isFetching}
             onClick={() => void query.refetch()}
           >
-            {query.isFetching ? "Loading NASA records…" : "Refresh NASA records"}
+            {query.isFetching ? "Loading weather data…" : "Refresh weather data"}
           </Button>
         </div>
       ) : (
@@ -136,7 +131,7 @@ export function HistoricalWeatherPanel({
             />
           </div>
           <Button type="submit" disabled={!!validation || query.isFetching}>
-            {query.isFetching ? "Loading NASA records…" : "Load historical weather"}
+            {query.isFetching ? "Loading weather data…" : "Load historical weather"}
           </Button>
         </form>
       )}
@@ -161,7 +156,7 @@ export function HistoricalWeatherPanel({
         {validation && <p className="integration-error">{validation}</p>}
         {query.isFetching && (
           <p className="historical-copy" role="status">
-            Contacting NASA POWER. This may take up to 45 seconds.
+            Loading weather data. Please wait...
           </p>
         )}
         {query.error && (
@@ -174,18 +169,18 @@ export function HistoricalWeatherPanel({
       {monthlyCharts && !data && (
         <div className="chart-grid" aria-live="polite">
           <section className="panel chart-panel">
-            <h2>Recorded monthly rainfall.</h2>
+            <h2>Monthly Rainfall</h2>
             <p className="historical-copy">
               {query.isFetching
-                ? "Loading actual NASA records…"
+                ? "Loading weather records…"
                 : "No observations loaded. Refresh to retry."}
             </p>
           </section>
           <section className="panel chart-panel">
-            <h2>Recorded monthly temperature.</h2>
+            <h2>Monthly Temperature</h2>
             <p className="historical-copy">
               {query.isFetching
-                ? "Loading actual NASA records…"
+                ? "Loading weather records…"
                 : "No observations loaded. Refresh to retry."}
             </p>
           </section>
@@ -253,7 +248,7 @@ export function HistoricalWeatherPanel({
                 const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
                 const anchor = document.createElement("a");
                 anchor.href = url;
-                anchor.download = `nasa-power-${data.latitude}-${data.longitude}-${data.start}-${data.end}.csv`;
+                anchor.download = `weather-data-${data.latitude}-${data.longitude}-${data.start}-${data.end}.csv`;
                 anchor.click();
                 window.setTimeout(() => URL.revokeObjectURL(url), 1000);
               }}
@@ -262,9 +257,7 @@ export function HistoricalWeatherPanel({
             </Button>
             <div className="weather-table-scroll">
               <table>
-                <caption>
-                  NASA POWER daily data · UTC · blank CSV values are missing observations
-                </caption>
+                <caption>Historical daily weather data</caption>
                 <thead>
                   <tr>
                     <th scope="col">Date</th>
@@ -298,28 +291,13 @@ export function HistoricalWeatherPanel({
               Use full year as demo water context
             </Button>
           )}
-          {onUse && (
-            <p className="historical-copy">
-              Apply a complete calendar year to the illustrative ranking. Crop ratings and water
-              thresholds remain unvalidated demo assumptions; these records do not classify ENSO.
-            </p>
-          )}
           <p className="historical-provenance">
             <a href={data.sourceUrl} target="_blank" rel="noreferrer">
               Open exact NASA JSON request ↗
-            </a>{" "}
-            · Retrieved {new Date(data.retrievedAt).toLocaleString()} · PRECTOTCORR (mm/day), T2M
-            (°C), UTC.
+            </a>
           </p>
         </>
       )}
-      <p className="historical-copy">
-        POWER meteorology has a coarse grid (approximately 0.5° × 0.625°). Nearby farms can share
-        records.{" "}
-        <a href="https://power.larc.nasa.gov/docs/" target="_blank" rel="noreferrer">
-          Source and methodology ↗
-        </a>
-      </p>
     </section>
   );
 }
