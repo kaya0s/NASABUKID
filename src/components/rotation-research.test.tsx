@@ -31,3 +31,22 @@ it("shows the adverse sweetpotato evidence rather than treating a high demo scor
   expect(screen.getByText(/40.05% in 2022 and 40.80% in 2023/)).toBeInTheDocument();
   expect(screen.getByText(/not loss estimates for this farm/)).toBeInTheDocument();
 });
+it("uses the actual crop for dynamic strategies and identifies unsupported options", () => {
+  const { rerender } = render(
+    <RotationResearch
+      rotationId="resilient-diversification"
+      nextCrop="Sweet potato"
+      drainage="Poor"
+    />,
+  );
+  expect(screen.getByText("Drainage needs verification.")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Yang/ })).toHaveAttribute(
+    "href",
+    CROP_RESEARCH.waterlogging.url,
+  );
+  rerender(
+    <RotationResearch rotationId="resilient-diversification" nextCrop="Rice" drainage="Poor" />,
+  );
+  expect(screen.getByText(/No crop-specific study is linked/)).toBeInTheDocument();
+  expect(screen.queryByText("Drainage needs verification.")).not.toBeInTheDocument();
+});

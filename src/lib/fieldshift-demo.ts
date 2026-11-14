@@ -1,3 +1,5 @@
+export const SAMPLE_RECOVERY = { affected: 65, yieldLoss: 35 } as const;
+
 export type ClimateScenario = "Typical" | "El Niño-like" | "Wet";
 
 export type Rotation = {
@@ -438,7 +440,8 @@ export const CROP_PROFILES: Record<string, CropProfile> = {
         name: "Sweet potato weevil (Cylas formicarius)",
         riskLevel: "High",
         riskWindow: "Dry cracked soils during tuber bulking",
-        mitigation: "Hill up soil over cracks, use clean vine cuttings, and rotate away from roots.",
+        mitigation:
+          "Hill up soil over cracks, use clean vine cuttings, and rotate away from roots.",
       },
       {
         name: "Storage-root rot",
@@ -606,20 +609,23 @@ export const CROP_PROFILES: Record<string, CropProfile> = {
     category: "Plantation",
     cycleDays: "10–12 Months",
     plantingWindow: "Nov – Mar / May – Jun",
-    soilImpact: "Multi-year ratoons compact soil and deplete N & K; trash mulching protects topsoil.",
+    soilImpact:
+      "Multi-year ratoons compact soil and deplete N & K; trash mulching protects topsoil.",
     verificationTags: ["DA-ATI Region 10", "BPI IPM", "FAO EcoCrop"],
     pestsAndDiseases: [
       {
         name: "Sugarcane borer & white grubs",
         riskLevel: "Moderate",
         riskWindow: "Warm dry-to-wet transitions in ratoon fields",
-        mitigation: "Trash-mulch, release Trichogramma if available, and break ratoons with legumes.",
+        mitigation:
+          "Trash-mulch, release Trichogramma if available, and break ratoons with legumes.",
       },
       {
         name: "Smut & red rot",
         riskLevel: "Moderate",
         riskWindow: "Waterlogged ratoon stools after heavy rain",
-        mitigation: "Rogue infected stools early and replant with clean setts after a legume break.",
+        mitigation:
+          "Rogue infected stools early and replant with clean setts after a legume break.",
       },
     ],
     pros: [
@@ -705,9 +711,14 @@ export function buildRotationStrategies(
   const ph = farm.ph;
   const slope = farm.slopePercent ?? null;
 
-  const currentNext = isMonoculture ? currentCrop : previousCrop === "Fallow" ? currentCrop : previousCrop;
+  const currentNext = isMonoculture
+    ? currentCrop
+    : previousCrop === "Fallow"
+      ? currentCrop
+      : previousCrop;
   const legumeNext = currentCrop === "Mungbean" ? "Corn" : "Mungbean";
-  const legumeFollow = legumeNext === "Mungbean" ? (currentCrop === "Rice" ? "Rice" : "Corn") : "Mungbean";
+  const legumeFollow =
+    legumeNext === "Mungbean" ? (currentCrop === "Rice" ? "Rice" : "Corn") : "Mungbean";
 
   const resilientNext =
     slope !== null && slope >= 15
@@ -790,11 +801,17 @@ export function buildRotationStrategies(
     if (item.isCurrentRotation && isMonoculture) {
       scores.soil -= 14;
       scores.resilience -= 12;
-      satelliteWhy.push("Monoculture penalty applied (−14 soil, −12 resilience) for demo comparison.");
+      satelliteWhy.push(
+        "Monoculture penalty applied (−14 soil, −12 resilience) for demo comparison.",
+      );
     }
 
     if (scenario === "El Niño-like") {
-      if (item.nextCrop === "Sorghum" || item.nextCrop === "Cassava" || item.nextCrop === "Mungbean") {
+      if (
+        item.nextCrop === "Sorghum" ||
+        item.nextCrop === "Cassava" ||
+        item.nextCrop === "Mungbean"
+      ) {
         scores.water += 4;
         scores.resilience += 4;
       } else if (item.nextCrop === "Rice") {
@@ -816,12 +833,16 @@ export function buildRotationStrategies(
       const phPenalty = item.nextCrop === "Pineapple" || item.nextCrop === "Cassava" ? 4 : 12;
       scores.soil -= phPenalty;
       satelliteWhy.push(
-        `SoilGrids pH (${ph.toFixed(1)}) is outside 5.5–7.5; soil score adjusted −${phPenalty}.`,
+        `Reported or imported pH (${ph.toFixed(1)}) is outside 5.5–7.5; soil score adjusted −${phPenalty}.`,
       );
     } else if (Number.isFinite(ph)) {
-      satelliteWhy.push(`SoilGrids pH (${ph.toFixed(1)}) falls within typical 5.5–7.5 demo range.`);
+      satelliteWhy.push(
+        `Reported or imported pH (${ph.toFixed(1)}) falls within typical 5.5–7.5 demo range.`,
+      );
     } else {
-      evidenceGaps.push("Soil pH is missing; obtain a local soil test before applying lime or fertilizer.");
+      evidenceGaps.push(
+        "Soil pH is missing; obtain a local soil test before applying lime or fertilizer.",
+      );
     }
 
     let noteText = item.baseNote;
@@ -831,18 +852,26 @@ export function buildRotationStrategies(
       noteText = `${noteText} Poor drainage: demo soil rating −${drainPenalty}. Field assessment required.`;
       satelliteWhy.push(`Poor drainage reduces ${item.nextCrop} soil score by −${drainPenalty}.`);
     } else if (farm.drainage === "Unknown") {
-      evidenceGaps.push("Field drainage is unconfirmed; check for standing water before planting roots or legumes.");
+      evidenceGaps.push(
+        "Field drainage is unconfirmed; check for standing water before planting roots or legumes.",
+      );
     }
 
     if (slope !== null && Number.isFinite(slope)) {
       if (slope >= 15) {
         if (item.nextCrop !== "Fallow" && item.nextCrop !== "Banana") scores.soil -= 8;
-        satelliteWhy.push(`Open-Meteo slope (${slope.toFixed(1)}%) flags erosion risk on tilled beds.`);
+        satelliteWhy.push(
+          `Open-Meteo slope (${slope.toFixed(1)}%) flags erosion risk on tilled beds.`,
+        );
       } else {
-        satelliteWhy.push(`Terrain slope (${slope.toFixed(1)}%) is within manageable cultivation limits.`);
+        satelliteWhy.push(
+          `Terrain slope (${slope.toFixed(1)}%) is within manageable cultivation limits.`,
+        );
       }
     } else {
-      evidenceGaps.push("Slope/elevation check not yet loaded; verify hillside runoff channels locally.");
+      evidenceGaps.push(
+        "Slope/elevation check not yet loaded; verify hillside runoff channels locally.",
+      );
     }
 
     if (rainfall !== undefined) {
@@ -857,7 +886,9 @@ export function buildRotationStrategies(
         `NASA POWER planting-month rain (${rainfall.toFixed(1)} mm) compared against ${sampleMonthlyNeed} mm demo threshold.`,
       );
     } else {
-      evidenceGaps.push("Planting-month NASA POWER rainfall not yet applied; using scenario baseline.");
+      evidenceGaps.push(
+        "Planting-month NASA POWER rainfall not yet applied; using scenario baseline.",
+      );
     }
 
     if (["Gravity-fed", "Pump-irrigated", "Drip irrigation"].includes(farm.irrigation)) {
@@ -867,7 +898,9 @@ export function buildRotationStrategies(
       evidenceGaps.push("Irrigation status is unknown; rainfed risk cannot be ruled out.");
     }
 
-    evidenceGaps.push("Local market prices, seed availability, and micro-climate require farmer/agronomist review.");
+    evidenceGaps.push(
+      "Local market prices, seed availability, and micro-climate require farmer/agronomist review.",
+    );
 
     for (const key of Object.keys(scores) as Array<keyof typeof scores>) {
       scores[key] = Math.round(Math.max(0, Math.min(100, scores[key])) * 10) / 10;
@@ -982,12 +1015,14 @@ export function buildSoilAndAgronomyAdvisory(input: {
   if (ph !== null && Number.isFinite(ph) && (ph < 4.8 || ph > 8.0)) {
     if (status === "Suitable") status = "Conditional";
     flags.push(
-      `Extreme SoilGrids pH (${ph.toFixed(1)}): confirm with a local soil test before planting sensitive crops.`,
+      `Extreme Reported or imported pH (${ph.toFixed(1)}): confirm with a local soil test before planting sensitive crops.`,
     );
   }
 
   if (elevation !== null && Number.isFinite(elevation)) {
-    flags.push(`Elevation ~${Math.round(elevation)} m ASL: matches ${elevation >= 500 ? "Bukidnon mid-to-highland" : "lowland/valley"} thermal profile.`);
+    flags.push(
+      `Elevation ~${Math.round(elevation)} m ASL: matches ${elevation >= 500 ? "Bukidnon mid-to-highland" : "lowland/valley"} thermal profile.`,
+    );
   }
 
   const suitabilitySummary =
@@ -1008,9 +1043,17 @@ export function buildSoilAndAgronomyAdvisory(input: {
     if (ph < 5.5) {
       phStatus = "Acidic";
       phLabel = `pH ${ph.toFixed(1)} (Acidic)`;
-      mineralsNeeded.push("Calcium (Ca) & Magnesium (Mg) via agricultural lime", "Available Phosphorus (P) — often fixed in acidic volcanic soils");
-      recommendedFertilizers.push("Dolomitic / agricultural lime (2–4 weeks pre-plant)", "Rock phosphate or 14-14-14 + organic compost");
-      avoidFertilizers.push("Heavy straight Ammonium Sulfate (21-0-0) without liming (further lowers pH)");
+      mineralsNeeded.push(
+        "Calcium (Ca) & Magnesium (Mg) via agricultural lime",
+        "Available Phosphorus (P) — often fixed in acidic volcanic soils",
+      );
+      recommendedFertilizers.push(
+        "Dolomitic / agricultural lime (2–4 weeks pre-plant)",
+        "Rock phosphate or 14-14-14 + organic compost",
+      );
+      avoidFertilizers.push(
+        "Heavy straight Ammonium Sulfate (21-0-0) without liming (further lowers pH)",
+      );
     } else if (ph <= 7.5) {
       phStatus = "Optimal";
       phLabel = `pH ${ph.toFixed(1)} (Balanced)`;
@@ -1019,36 +1062,56 @@ export function buildSoilAndAgronomyAdvisory(input: {
           ? "Nitrogen (N) & Potassium (K) replenishment after heavy cereal/cane uptake"
           : "Balanced N-P-K maintenance",
       );
-      recommendedFertilizers.push("Complete 14-14-14 basal + compost/vermicast", "Targeted Urea (46-0-0) split-applied");
-      avoidFertilizers.push("Single-pass heavy nitrogen before heavy rain (leaching & lodging risk)");
+      recommendedFertilizers.push(
+        "Complete 14-14-14 basal + compost/vermicast",
+        "Targeted Urea (46-0-0) split-applied",
+      );
+      avoidFertilizers.push(
+        "Single-pass heavy nitrogen before heavy rain (leaching & lodging risk)",
+      );
     } else {
       phStatus = "Alkaline";
       phLabel = `pH ${ph.toFixed(1)} (Alkaline)`;
       mineralsNeeded.push("Zinc (Zn), Iron (Fe), & Phosphorus availability check");
-      recommendedFertilizers.push("Ammonium sulfate (21-0-0) or organic mulch to gently buffer pH", "Foliar micronutrient check if chlorosis appears");
+      recommendedFertilizers.push(
+        "Ammonium sulfate (21-0-0) or organic mulch to gently buffer pH",
+        "Foliar micronutrient check if chlorosis appears",
+      );
       avoidFertilizers.push("Additional agricultural lime or wood ash (raises pH further)");
     }
   } else {
     mineralsNeeded.push("Run a barangay/DA soil kit check for N-P-K and pH before basal purchase");
-    recommendedFertilizers.push("Well-decomposed farmyard manure or compost as a safe soil-building base");
+    recommendedFertilizers.push(
+      "Well-decomposed farmyard manure or compost as a safe soil-building base",
+    );
     avoidFertilizers.push("Unverified high-rate synthetic blends without knowing baseline soil pH");
   }
 
   if (soilTexture.toLowerCase().includes("sand") && soilTexture.includes("6")) {
-    mineralsNeeded.push("Organic matter & Potassium (K) — sandy soils leach mobile nutrients quickly");
+    mineralsNeeded.push(
+      "Organic matter & Potassium (K) — sandy soils leach mobile nutrients quickly",
+    );
     avoidFertilizers.push("Single heavy broadcast of soluble Urea (split into 2–3 smaller doses)");
   }
 
   if (nextCrop === "Mungbean") {
-    recommendedFertilizers.push("Rhizobium inoculant + low starter N (let legume nodules fix nitrogen)");
-    avoidFertilizers.push("High nitrogen rates (>30 kg N/ha) — suppresses root nodulation and causes excess vine");
+    recommendedFertilizers.push(
+      "Rhizobium inoculant + low starter N (let legume nodules fix nitrogen)",
+    );
+    avoidFertilizers.push(
+      "High nitrogen rates (>30 kg N/ha) — suppresses root nodulation and causes excess vine",
+    );
   } else if (nextCrop === "Sweet potato" || nextCrop === "Cassava") {
     mineralsNeeded.push("Potassium (K) for root/tuber bulking");
     recommendedFertilizers.push("Muriate of Potash (0-0-60) or balanced K-rich blend");
-    avoidFertilizers.push("Excess late-stage Nitrogen (produces leafy vines at the expense of tubers)");
+    avoidFertilizers.push(
+      "Excess late-stage Nitrogen (produces leafy vines at the expense of tubers)",
+    );
   } else if (nextCrop === "Fallow") {
     mineralsNeeded.push("Organic carbon & surface residue retention");
-    recommendedFertilizers.push("Retain crop stover/mulch or sow cover legumes; skip synthetic fertilizer");
+    recommendedFertilizers.push(
+      "Retain crop stover/mulch or sow cover legumes; skip synthetic fertilizer",
+    );
     avoidFertilizers.push("Synthetic top-dressing during rest period");
   }
 
@@ -1064,7 +1127,8 @@ export function buildSoilAndAgronomyAdvisory(input: {
           {
             stage: "Soil Recovery Window",
             timing: "Weeks 2–6",
-            guidance: "Allow soil structure and beneficial microbes to recover; slash aggressive weeds before seeding.",
+            guidance:
+              "Allow soil structure and beneficial microbes to recover; slash aggressive weeds before seeding.",
           },
         ]
       : nextCrop === "Mungbean"
@@ -1072,7 +1136,8 @@ export function buildSoilAndAgronomyAdvisory(input: {
             {
               stage: "Basal (At Planting)",
               timing: "Day 0",
-              guidance: "Apply light starter P & K (or 14-14-14) + Rhizobium inoculant in moist furrows.",
+              guidance:
+                "Apply light starter P & K (or 14-14-14) + Rhizobium inoculant in moist furrows.",
             },
             {
               stage: "Early Vegetative",
@@ -1107,12 +1172,14 @@ export function buildSoilAndAgronomyAdvisory(input: {
               {
                 stage: "Basal (At Planting)",
                 timing: "Day 0",
-                guidance: "Band 14-14-14 + organic compost 5 cm beside seed/sett; apply lime 2–4 weeks earlier if pH < 5.5.",
+                guidance:
+                  "Band 14-14-14 + organic compost 5 cm beside seed/sett; apply lime 2–4 weeks earlier if pH < 5.5.",
               },
               {
                 stage: "Vegetative (V4–V6 / Tillering)",
                 timing: "21–30 DAP",
-                guidance: "Side-dress Urea (46-0-0) into moist soil before hilling up; avoid broadcasting before storms.",
+                guidance:
+                  "Side-dress Urea (46-0-0) into moist soil before hilling up; avoid broadcasting before storms.",
               },
               {
                 stage: "Pre-Tassel / Booting",
@@ -1122,7 +1189,20 @@ export function buildSoilAndAgronomyAdvisory(input: {
             ];
 
   // 4. Climate planting window & pest-prominent conditions
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   let bestPlantingWindow =
     "May–June (onset of wet season) or Oct–Nov (second-crop residual moisture window) in typical Bukidnon calendars.";
   let prominentPestClimate =
@@ -1136,11 +1216,12 @@ export function buildSoilAndAgronomyAdvisory(input: {
     const wettest = monthlyRainfall
       .map((mm, idx) => ({ mm, name: monthNames[idx]! }))
       .sort((a, b) => b.mm - a.mm)[0];
-    const warmest = monthlyTemperature?.length === 12
-      ? monthlyTemperature
-          .map((t, idx) => ({ t, name: monthNames[idx]! }))
-          .sort((a, b) => b.t - a.t)[0]
-      : null;
+    const warmest =
+      monthlyTemperature?.length === 12
+        ? monthlyTemperature
+            .map((t, idx) => ({ t, name: monthNames[idx]! }))
+            .sort((a, b) => b.t - a.t)[0]
+        : null;
 
     if (idealMonths.length > 0) {
       bestPlantingWindow = `NASA POWER shows moderate moisture (110–240 mm/mo) in ${idealMonths.slice(0, 4).join(", ")} — favorable demo establishment windows.`;

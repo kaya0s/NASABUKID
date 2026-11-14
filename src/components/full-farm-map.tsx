@@ -1,5 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, BadgeCheck, Check, ChevronDown, ExternalLink, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, Sprout, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  GripHorizontal,
+  Layers,
+  Loader2,
+  Locate,
+  MapPin,
+  Navigation,
+  Pencil,
+  RotateCcw,
+  Search,
+  Sprout,
+  Trash2,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -161,7 +181,11 @@ async function searchLocations(
   return results;
 }
 
-async function lookupLandmark(lat: number, lon: number, signal?: AbortSignal): Promise<{ title: string; subtitle: string }> {
+async function lookupLandmark(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<{ title: string; subtitle: string }> {
   const url = `https://photon.komoot.io/reverse?${new URLSearchParams({
     lat: String(lat),
     lon: String(lon),
@@ -285,7 +309,11 @@ async function lookupLocationPhoto(
         query?: {
           pages?: Record<
             string,
-            { index?: number; title?: string; imageinfo?: Array<{ thumburl?: string; url?: string }> }
+            {
+              index?: number;
+              title?: string;
+              imageinfo?: Array<{ thumburl?: string; url?: string }>;
+            }
           >;
         };
       };
@@ -298,7 +326,9 @@ async function lookupLocationPhoto(
         if (src && isRepresentativePhoto(name)) {
           return {
             url: src,
-            label: (page.title || "Nearby area photo").replace(/^File:/, "").replace(/\.[^.]+$/, ""),
+            label: (page.title || "Nearby area photo")
+              .replace(/^File:/, "")
+              .replace(/\.[^.]+$/, ""),
           };
         }
       }
@@ -382,7 +412,12 @@ export function FullFarmMap({
   const [detailTab, setDetailTab] = useState<"proscons" | "pests">("proscons");
   const [modalOffset, setModalOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
+  const dragStartRef = useRef<{
+    startX: number;
+    startY: number;
+    initX: number;
+    initY: number;
+  } | null>(null);
 
   // Location search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -503,7 +538,9 @@ export function FullFarmMap({
     if (!dragStartRef.current) return;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
+    } catch {
+      // Pointer capture may already be released when the drag ends.
+    }
     dragStartRef.current = null;
     setIsDragging(false);
   };
@@ -532,7 +569,12 @@ export function FullFarmMap({
   const accuracyCircleRef = useRef<CircleInstance | null>(null);
   const lookupAbortRef = useRef<AbortController | null>(null);
 
-  function showLandmarkFor(lat: number, lng: number, source: "gps" | "pin", accuracyMeters: number | null) {
+  function showLandmarkFor(
+    lat: number,
+    lng: number,
+    source: "gps" | "pin",
+    accuracyMeters: number | null,
+  ) {
     lookupAbortRef.current?.abort();
     const controller = new AbortController();
     lookupAbortRef.current = controller;
@@ -577,7 +619,10 @@ export function FullFarmMap({
       .then((L) => {
         if (disposed || !containerRef.current) return;
         leafletRef.current = L;
-        const point: [number, number] = [locationRef.current.latitude, locationRef.current.longitude];
+        const point: [number, number] = [
+          locationRef.current.latitude,
+          locationRef.current.longitude,
+        ];
         const instance = L.map(containerRef.current, {
           scrollWheelZoom: true,
           zoomControl: false,
@@ -653,12 +698,15 @@ export function FullFarmMap({
             iconSize: [18, 18],
             iconAnchor: [9, 9],
           });
-          const edgeMarker = L.marker(getEastEdge({ lat: point[0], lng: point[1] }, radiusRef.current), {
-            icon: edgeIcon,
-            interactive: true,
-            draggable: true,
-            zIndexOffset: 900,
-          }).addTo(instance);
+          const edgeMarker = L.marker(
+            getEastEdge({ lat: point[0], lng: point[1] }, radiusRef.current),
+            {
+              icon: edgeIcon,
+              interactive: true,
+              draggable: true,
+              zIndexOffset: 900,
+            },
+          ).addTo(instance);
 
           edgeMarker.on?.("drag", () => {
             const edgeLatLng = edgeMarker.getLatLng?.();
@@ -667,7 +715,10 @@ export function FullFarmMap({
               lng: locationRef.current.longitude,
             };
             if (!edgeLatLng) return;
-            const nextRadius = Math.max(15, Math.min(2000, Math.round(distanceMeters(centerLatLng, edgeLatLng))));
+            const nextRadius = Math.max(
+              15,
+              Math.min(2000, Math.round(distanceMeters(centerLatLng, edgeLatLng))),
+            );
             accuracyCircleRef.current?.setRadius(nextRadius);
             setRadiusMeters(nextRadius);
           });
@@ -999,7 +1050,11 @@ export function FullFarmMap({
             </Button>
 
             {layersOpen && (
-              <div className="full-map-layers-menu" role="menu" aria-label="Map layers and NASA heatmaps">
+              <div
+                className="full-map-layers-menu"
+                role="menu"
+                aria-label="Map layers and NASA heatmaps"
+              >
                 <div className="full-map-layers-section">Base map</div>
                 {(
                   [
@@ -1038,33 +1093,41 @@ export function FullFarmMap({
                   <span>Off</span>
                   {heatmap === "none" && <Check size={14} />}
                 </button>
-                {(Object.keys(HEATMAP_LAYERS) as Array<Exclude<HeatmapLayer, "none">>).map((key) => {
-                  const cfg = HEATMAP_LAYERS[key];
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={heatmap === key}
-                      className={`full-map-layers-item ${heatmap === key ? "is-active" : ""}`}
-                      onClick={() => {
-                        setHeatmap(key);
-                        setLayersOpen(false);
-                      }}
-                    >
-                      <div>
-                        <strong>{cfg.label}</strong>
-                        <small>{cfg.detail}</small>
-                      </div>
-                      {heatmap === key && <Check size={14} />}
-                    </button>
-                  );
-                })}
+                {(Object.keys(HEATMAP_LAYERS) as Array<Exclude<HeatmapLayer, "none">>).map(
+                  (key) => {
+                    const cfg = HEATMAP_LAYERS[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={heatmap === key}
+                        className={`full-map-layers-item ${heatmap === key ? "is-active" : ""}`}
+                        onClick={() => {
+                          setHeatmap(key);
+                          setLayersOpen(false);
+                        }}
+                      >
+                        <div>
+                          <strong>{cfg.label}</strong>
+                          <small>{cfg.detail}</small>
+                        </div>
+                        {heatmap === key && <Check size={14} />}
+                      </button>
+                    );
+                  },
+                )}
               </div>
             )}
           </div>
 
-          <Button type="button" size="sm" variant="secondary" onClick={locateMe} disabled={locating}>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={locateMe}
+            disabled={locating}
+          >
             <Locate size={14} className={locating ? "animate-spin" : ""} />
             {locating ? "Locating…" : "Locate me"}
           </Button>
@@ -1155,7 +1218,7 @@ export function FullFarmMap({
           <div className="full-map-profile-head">
             <div>
               <div className="drawer-badges-row">
-                <span className="drawer-badge-nasa">NASA EARTHDATA</span>
+                <span className="drawer-badge-nasa">REGIONAL DATA · DEMO OPTIONS</span>
                 <span className="drawer-badge-engine">Rotation Engine</span>
                 {historical?.sourceUrl && (
                   <a
@@ -1208,9 +1271,15 @@ export function FullFarmMap({
               const climateSummary = historical ? summarizeWeather(historical.days) : null;
               const moisture = historical?.soilMoisturePercent ?? null;
               const moistureTag =
-                moisture === null ? "Awaiting" : moisture < 20 ? "Dry" : moisture > 65 ? "Wet" : "Optimal";
-              const surfaceTemp = historical?.surfaceTempC ?? climateSummary?.temperature ?? null;
-              const rain30 = historical?.recent30dRainfallMm ?? climateSummary?.rainfall ?? null;
+                moisture === null
+                  ? "Unavailable"
+                  : moisture < 20
+                    ? "Dry"
+                    : moisture > 65
+                      ? "Wet"
+                      : "Mid-range";
+              const surfaceTemp = historical?.surfaceTempC ?? null;
+              const rain30 = historical?.recent30dRainfallMm ?? null;
               const elev = terrain?.elevation ?? historical?.nasaElevationM ?? null;
               const slope = terrain?.slopePercent ?? null;
               const currentProfile = getCropProfile(farm.crop);
@@ -1227,17 +1296,24 @@ export function FullFarmMap({
 
               return (
                 <div className="drawer-rotation-body">
-                  <div className="drawer-telemetry-grid" aria-label="NASA plot telemetry">
+                  <div
+                    className="drawer-telemetry-grid"
+                    aria-label="Regional historical NASA values"
+                  >
                     <button
                       type="button"
                       className={`telemetry-tile is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
                       aria-pressed={heatmap === "soil_moisture"}
                       title="Toggle NASA SMAP soil moisture map layer"
-                      onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
+                      onClick={() =>
+                        setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")
+                      }
                     >
-                      <span>SMAP / GWETTOP</span>
-                      <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
-                      <small>{moistureTag} · map layer</small>
+                      <span>POWER / GWETTOP</span>
+                      <strong>
+                        {climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}
+                      </strong>
+                      <small>{moistureTag} · SMAP layer</small>
                     </button>
                     <button
                       type="button"
@@ -1246,11 +1322,15 @@ export function FullFarmMap({
                       title="Toggle NASA MODIS land surface temperature map layer"
                       onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
                     >
-                      <span>MODIS / TS</span>
+                      <span>POWER / TS</span>
                       <strong>
-                        {climateLoading ? "…" : surfaceTemp !== null ? `${surfaceTemp.toFixed(1)}°C` : "—"}
+                        {climateLoading
+                          ? "…"
+                          : surfaceTemp !== null
+                            ? `${surfaceTemp.toFixed(1)}°C`
+                            : "—"}
                       </strong>
-                      <small>Surface · map layer</small>
+                      <small>POWER value · MODIS layer</small>
                     </button>
                     <button
                       type="button"
@@ -1264,17 +1344,26 @@ export function FullFarmMap({
                       <small>Vegetation · map only</small>
                     </button>
                     <div className="telemetry-tile">
-                      <span>GPM / 30D RAIN</span>
-                      <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)} mm` : "—"}</strong>
+                      <span>POWER / 30D RAIN</span>
+                      <strong>
+                        {climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)} mm` : "—"}
+                      </strong>
                       <small>Precipitation</small>
                     </div>
                     <div className="telemetry-tile">
-                      <span>SRTM / SLOPE</span>
+                      <span>COPERNICUS TERRAIN</span>
                       <strong>{elev !== null ? `${Math.round(elev)} m` : "—"}</strong>
                       <small>{slope !== null ? `${slope.toFixed(1)}% slope` : "Terrain"}</small>
                     </div>
                   </div>
 
+                  <p className="historical-copy">
+                    Regional POWER values are not field measurements. Map overlays are separate
+                    datasets; no NASA suitability score exists here.{" "}
+                    {historical
+                      ? `${historical.start} to ${historical.end}.`
+                      : "Weather unavailable until loaded."}
+                  </p>
                   <div className="drawer-current-crop-card">
                     <img
                       src={currentProfile.image}
@@ -1306,7 +1395,7 @@ export function FullFarmMap({
                   </div>
 
                   <div className="drawer-sequence-heading">
-                    <span>SUGGESTED ROTATION SEQUENCE (3 STRATEGIES)</span>
+                    <span>THREE DEMO OPTIONS · NOT VALIDATED RECOMMENDATIONS</span>
                   </div>
 
                   <div className="drawer-timeline">
@@ -1320,9 +1409,7 @@ export function FullFarmMap({
                           <button
                             type="button"
                             className="drawer-timeline-summary"
-                            onClick={() =>
-                              setExpandedStrategyId(isExpanded ? "" : strategy.id)
-                            }
+                            onClick={() => setExpandedStrategyId(isExpanded ? "" : strategy.id)}
                           >
                             <span className="timeline-step-num">{idx + 1}</span>
                             <img
@@ -1336,7 +1423,7 @@ export function FullFarmMap({
                                   {strategy.plantingWindow} · {strategy.cycleDays}
                                 </span>
                                 <span className="timeline-match-pill">
-                                  {Math.round(strategy.total)}% NASA Match
+                                  {Math.round(strategy.total)} / 100 · Demo
                                 </span>
                               </div>
                               <strong>
@@ -1356,72 +1443,72 @@ export function FullFarmMap({
                             aria-hidden={!isExpanded}
                           >
                             <div className="drawer-collapse-inner">
-                            <div className="drawer-timeline-details">
-                              <div className="drawer-detail-tabs">
-                                <button
-                                  type="button"
-                                  className={detailTab === "proscons" ? "is-active" : ""}
-                                  onClick={() => setDetailTab("proscons")}
-                                >
-                                  Pros &amp; Cons
-                                </button>
-                                <button
-                                  type="button"
-                                  className={detailTab === "pests" ? "is-active" : ""}
-                                  onClick={() => setDetailTab("pests")}
-                                >
-                                  Pests &amp; Mitigations ({strategy.pestsAndDiseases.length})
-                                </button>
-                              </div>
-
-                              {detailTab === "proscons" ? (
-                                <div className="drawer-proscons-grid">
-                                  <div>
-                                    <strong className="pros-title">Pros</strong>
-                                    <ul>
-                                      {strategy.pros.map((item) => (
-                                        <li key={item}>{item}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                  <div>
-                                    <strong className="cons-title">Cons &amp; Trade-offs</strong>
-                                    <ul>
-                                      {strategy.cons.map((item) => (
-                                        <li key={item}>{item}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
+                              <div className="drawer-timeline-details">
+                                <div className="drawer-detail-tabs">
+                                  <button
+                                    type="button"
+                                    className={detailTab === "proscons" ? "is-active" : ""}
+                                    onClick={() => setDetailTab("proscons")}
+                                  >
+                                    Pros &amp; Cons
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={detailTab === "pests" ? "is-active" : ""}
+                                    onClick={() => setDetailTab("pests")}
+                                  >
+                                    Pests &amp; Mitigations ({strategy.pestsAndDiseases.length})
+                                  </button>
                                 </div>
-                              ) : (
-                                <div className="drawer-pests-list">
-                                  {strategy.pestsAndDiseases.map((pest) => (
-                                    <div key={pest.name} className="drawer-pest-item">
-                                      <div className="drawer-pest-head">
-                                        <strong>{pest.name}</strong>
-                                        <span
-                                          className={`risk-pill risk-${pest.riskLevel.toLowerCase()}`}
-                                        >
-                                          {pest.riskLevel} Risk
-                                        </span>
-                                      </div>
-                                      <small>
-                                        <b>Trigger:</b> {pest.riskWindow}
-                                      </small>
-                                      <small>
-                                        <b>Mitigation:</b> {pest.mitigation}
-                                      </small>
+
+                                {detailTab === "proscons" ? (
+                                  <div className="drawer-proscons-grid">
+                                    <div>
+                                      <strong className="pros-title">Pros</strong>
+                                      <ul>
+                                        {strategy.pros.map((item) => (
+                                          <li key={item}>{item}</li>
+                                        ))}
+                                      </ul>
                                     </div>
+                                    <div>
+                                      <strong className="cons-title">Cons &amp; Trade-offs</strong>
+                                      <ul>
+                                        {strategy.cons.map((item) => (
+                                          <li key={item}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="drawer-pests-list">
+                                    {strategy.pestsAndDiseases.map((pest) => (
+                                      <div key={pest.name} className="drawer-pest-item">
+                                        <div className="drawer-pest-head">
+                                          <strong>{pest.name}</strong>
+                                          <span
+                                            className={`risk-pill risk-${pest.riskLevel.toLowerCase()}`}
+                                          >
+                                            {pest.riskLevel} Risk
+                                          </span>
+                                        </div>
+                                        <small>
+                                          <b>Trigger:</b> {pest.riskWindow}
+                                        </small>
+                                        <small>
+                                          <b>Mitigation:</b> {pest.mitigation}
+                                        </small>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <div className="drawer-verification-tags">
+                                  {strategy.verificationTags.map((tag) => (
+                                    <span key={tag}>{tag}</span>
                                   ))}
                                 </div>
-                              )}
-
-                              <div className="drawer-verification-tags">
-                                {strategy.verificationTags.map((tag) => (
-                                  <span key={tag}>{tag}</span>
-                                ))}
                               </div>
-                            </div>
                             </div>
                           </div>
                         </div>
@@ -1434,115 +1521,126 @@ export function FullFarmMap({
           ) : (
             <>
               <div className="full-map-profile-grid">
-            <div className="form-field full-span">
-              <Label htmlFor="map-farm-location">Municipality / city (automatic, editable)</Label>
-              <Input
-                id="map-farm-location"
-                value={farm.place}
-                onChange={(e) => onUpdateFarm("place", e.target.value)}
-              />
-              <small>Detected from your selected farm point when public records are available.</small>
-            </div>
+                <div className="form-field full-span">
+                  <Label htmlFor="map-farm-location">
+                    Municipality / city (automatic, editable)
+                  </Label>
+                  <Input
+                    id="map-farm-location"
+                    value={farm.place}
+                    onChange={(e) => onUpdateFarm("place", e.target.value)}
+                  />
+                  <small>
+                    Detected from your selected farm point when public records are available.
+                  </small>
+                </div>
 
-            <div className="form-field">
-              <Label htmlFor="map-area-ha">Farm area (ha)</Label>
-              <div className="input-unit-wrap">
-                <Input id="map-area-ha" readOnly value={farm.area} />
-                <span>ha</span>
+                <div className="form-field">
+                  <Label htmlFor="map-area-ha">Farm area (ha)</Label>
+                  <div className="input-unit-wrap">
+                    <Input id="map-area-ha" readOnly value={farm.area} />
+                    <span>ha</span>
+                  </div>
+                  <small>Calculated from drawn boundary.</small>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-plant-date">Planned next planting</Label>
+                  <Input
+                    id="map-plant-date"
+                    type="date"
+                    value={farm.planted}
+                    onChange={(e) => onUpdateFarm("planted", e.target.value)}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-current-crop">Current crop</Label>
+                  <select
+                    id="map-current-crop"
+                    className="form-select"
+                    value={farm.crop}
+                    onChange={(e) => onUpdateFarm("crop", e.target.value)}
+                  >
+                    {cropOptions.map((crop) => (
+                      <option key={crop}>{crop}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-previous-crop">Previous crop</Label>
+                  <select
+                    id="map-previous-crop"
+                    className="form-select"
+                    value={farm.previous}
+                    onChange={(e) => onUpdateFarm("previous", e.target.value)}
+                  >
+                    {previousCropOptions.map((crop) => (
+                      <option key={crop}>{crop}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-soil-type">Soil texture / type</Label>
+                  <Input
+                    id="map-soil-type"
+                    value={farm.soil}
+                    placeholder="Unavailable public estimate"
+                    onChange={(e) => onUpdateFarm("soil", e.target.value)}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-soil-ph">Soil pH (water)</Label>
+                  <Input
+                    id="map-soil-ph"
+                    type="number"
+                    min="0"
+                    max="14"
+                    step="0.1"
+                    placeholder="Unknown"
+                    value={farm.ph}
+                    onChange={(e) => onUpdateFarm("ph", e.target.value)}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-irrigation">Irrigation</Label>
+                  <select
+                    id="map-irrigation"
+                    className="form-select"
+                    value={farm.irrigation}
+                    onChange={(e) => onUpdateFarm("irrigation", e.target.value)}
+                  >
+                    {[
+                      "Unknown",
+                      "Rain-fed",
+                      "Gravity-fed",
+                      "Pump-irrigated",
+                      "Drip irrigation",
+                      "Other",
+                    ].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-drainage">Field drainage</Label>
+                  <select
+                    id="map-drainage"
+                    className="form-select"
+                    value={farm.drainage}
+                    onChange={(e) => onUpdateFarm("drainage", e.target.value)}
+                  >
+                    {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <small>Calculated from drawn boundary.</small>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-plant-date">Planned next planting</Label>
-              <Input
-                id="map-plant-date"
-                type="date"
-                value={farm.planted}
-                onChange={(e) => onUpdateFarm("planted", e.target.value)}
-              />
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-current-crop">Current crop</Label>
-              <select
-                id="map-current-crop"
-                className="form-select"
-                value={farm.crop}
-                onChange={(e) => onUpdateFarm("crop", e.target.value)}
-              >
-                {cropOptions.map((crop) => (
-                  <option key={crop}>{crop}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-previous-crop">Previous crop</Label>
-              <select
-                id="map-previous-crop"
-                className="form-select"
-                value={farm.previous}
-                onChange={(e) => onUpdateFarm("previous", e.target.value)}
-              >
-                {previousCropOptions.map((crop) => (
-                  <option key={crop}>{crop}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-soil-type">Soil texture / type</Label>
-              <Input
-                id="map-soil-type"
-                value={farm.soil}
-                placeholder="Awaiting public estimate"
-                onChange={(e) => onUpdateFarm("soil", e.target.value)}
-              />
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-soil-ph">Soil pH (water)</Label>
-              <Input
-                id="map-soil-ph"
-                type="number"
-                min="0"
-                max="14"
-                step="0.1"
-                placeholder="Unknown"
-                value={farm.ph}
-                onChange={(e) => onUpdateFarm("ph", e.target.value)}
-              />
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-irrigation">Irrigation</Label>
-              <select
-                id="map-irrigation"
-                className="form-select"
-                value={farm.irrigation}
-                onChange={(e) => onUpdateFarm("irrigation", e.target.value)}
-              >
-                {["Unknown", "Rain-fed", "Gravity-fed", "Pump-irrigated", "Drip irrigation", "Other"].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-drainage">Field drainage</Label>
-              <select
-                id="map-drainage"
-                className="form-select"
-                value={farm.drainage}
-                onChange={(e) => onUpdateFarm("drainage", e.target.value)}
-              >
-                {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </div>
-          </div>
 
               {(() => {
                 const climateSummary = historical ? summarizeWeather(historical.days) : null;
@@ -1556,7 +1654,10 @@ export function FullFarmMap({
                         ? `${slope.toFixed(1)}% slope · Moderate`
                         : `${slope.toFixed(1)}% slope · Suitable`;
                 return (
-                  <div className="full-map-nasa-snapshot" aria-label="NASA climate and terrain summary">
+                  <div
+                    className="full-map-nasa-snapshot"
+                    aria-label="NASA climate and terrain summary"
+                  >
                     <div>
                       <span>NASA POWER (90d)</span>
                       <strong>
@@ -1661,7 +1762,8 @@ export function FullFarmMap({
               <div className="landmark-radius-row">
                 <label htmlFor="landmark-radius-range">Area radius (drag pin or edge)</label>
                 <span>
-                  {radiusMeters} m (≈ {((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)} ha)
+                  {radiusMeters} m (≈ {((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)}{" "}
+                  ha)
                 </span>
               </div>
               <input
@@ -1720,14 +1822,14 @@ export function FullFarmMap({
 
       {/* NASA GIBS heatmap legend */}
       {heatmap !== "none" && !drawing && (
-        <div className="full-map-heatmap-legend" role="status" aria-label="Active NASA heatmap legend">
+        <div
+          className="full-map-heatmap-legend"
+          role="status"
+          aria-label="Active NASA heatmap legend"
+        >
           <div className="full-map-heatmap-legend-head">
             <strong>{HEATMAP_LAYERS[heatmap].label}</strong>
-            <button
-              type="button"
-              aria-label="Turn off heatmap"
-              onClick={() => setHeatmap("none")}
-            >
+            <button type="button" aria-label="Turn off heatmap" onClick={() => setHeatmap("none")}>
               <X size={13} />
             </button>
           </div>

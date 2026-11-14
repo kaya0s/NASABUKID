@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -43,7 +44,18 @@ export async function fetchCurrentWeather(
   const res = await fetch(url, { signal: signal ?? null });
   if (!res.ok) throw new Error("Could not load weather data.");
   const json = await res.json();
-  const current = json.current;
+  const current = z
+    .object({
+      temperature_2m: z.number().finite(),
+      apparent_temperature: z.number().finite(),
+      relative_humidity_2m: z.number().min(0).max(100),
+      precipitation: z.number().nonnegative(),
+      wind_speed_10m: z.number().nonnegative(),
+      weather_code: z.number().int(),
+      is_day: z.number().min(0).max(1),
+      time: z.string().min(1),
+    })
+    .parse(json.current);
   return {
     temperature: Math.round(current.temperature_2m),
     apparentTemperature: Math.round(current.apparent_temperature),
@@ -65,6 +77,7 @@ export function OverviewWeatherWidget({
   onLocationFound?: (coords: Coordinates) => void;
 }) {
   const [detecting, setDetecting] = useState(false);
+  const [locationError, setLocationError] = useState("");
   const isTestEnv = typeof process !== "undefined" && process.env["NODE_ENV"] === "test";
   const [loaded] = useState(!isTestEnv);
 
@@ -77,7 +90,11 @@ export function OverviewWeatherWidget({
   });
 
   const handleUseCurrentLocation = () => {
-    if (!navigator?.geolocation) return;
+    setLocationError("");
+    if (!navigator?.geolocation) {
+      setLocationError("Location unavailable. Set your location in My farm.");
+      return;
+    }
     setDetecting(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -89,6 +106,7 @@ export function OverviewWeatherWidget({
         onLocationFound?.(coords);
       },
       () => {
+        setLocationError("Could not find your location. Set it in My farm.");
         setDetecting(false);
       },
       { timeout: 10000, enableHighAccuracy: false },
@@ -98,7 +116,7 @@ export function OverviewWeatherWidget({
   const weather = query.data;
   const { label: conditionLabel, icon: WeatherIcon } = weather
     ? interpretWeatherCode(weather.weatherCode)
-    : { label: "Sunny / Clear", icon: Sun };
+    : { label: query.isFetching ? "Loading weather…" : "Weather unavailable", icon: Cloud };
 
   const todayDate = new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -124,11 +142,14 @@ export function OverviewWeatherWidget({
             <strong className="agri-greeting-main">Welcome back!</strong>
           </div>
         </div>
-        <button className="agri-notif-btn" aria-label="Notifications">
-          <Bell size={18} />
-        </button>
       </div>
 
+      {locationError && <p role="alert">{locationError}</p>}
+      <p>
+        Open-Meteo model data · {location.latitude.toFixed(3)}, {location.longitude.toFixed(3)} ·{" "}
+        {weather?.time ?? "No data loaded"}
+      </p>
+      {query.isError && <button onClick={() => void query.refetch()}>Retry weather</button>}
       {/* Embedded Glass Weather Card */}
       <div className="agri-weather-glass-card">
         <div className="agri-weather-top">
@@ -140,7 +161,7 @@ export function OverviewWeatherWidget({
             title="Click to refresh GPS"
           >
             <LocateFixed size={14} className={detecting ? "animate-spin" : ""} />
-            <span>{detecting ? "Locating..." : "Bukidnon, Philippines"}</span>
+            <span>{detecting ? "Locating..." : "Use my location"}</span>
           </button>
 
           <div className="agri-weather-visual">
@@ -150,7 +171,7 @@ export function OverviewWeatherWidget({
 
         <div className="agri-weather-mid">
           <div className="agri-temp-display">
-            <span className="agri-temp-val">{weather ? weather.temperature : "26"}</span>
+            <span className="agri-temp-val">{weather ? weather.temperature : "—"}</span>
             <span className="agri-temp-deg">°C</span>
           </div>
           <div className="agri-condition-block">
@@ -163,20 +184,18 @@ export function OverviewWeatherWidget({
           <div className="agri-stat-col">
             <span className="agri-stat-label">Humidity</span>
             <strong className="agri-stat-val">
-              {weather ? `${weather.relativeHumidity}%` : "80%"}
+              {weather ? `${weather.relativeHumidity}%` : "—"}
             </strong>
           </div>
           <div className="agri-stat-col">
             <span className="agri-stat-label">Precipitation</span>
             <strong className="agri-stat-val">
-              {weather ? `${weather.precipitation} mm` : "2 mm"}
+              {weather ? `${weather.precipitation} mm` : "—"}
             </strong>
           </div>
           <div className="agri-stat-col">
             <span className="agri-stat-label">Wind Speed</span>
-            <strong className="agri-stat-val">
-              {weather ? `${weather.windSpeed} km/h` : "12 km/h"}
-            </strong>
+            <strong className="agri-stat-val">{weather ? `${weather.windSpeed} km/h` : "—"}</strong>
           </div>
         </div>
       </div>

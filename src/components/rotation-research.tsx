@@ -1,24 +1,32 @@
-import { CROP_RESEARCH, ROTATION_RESEARCH } from "@/lib/crop-research";
+import { CROP_RESEARCH, ROTATION_RESEARCH, NEXT_CROP_RESEARCH } from "@/lib/crop-research";
 
 export function RotationResearch({
   rotationId,
   drainage,
+  nextCrop,
 }: {
   rotationId: string;
+  nextCrop?: string;
   drainage: string;
 }) {
-  const evidence = ROTATION_RESEARCH[rotationId];
-  if (!evidence) return null;
+  const evidence = nextCrop ? NEXT_CROP_RESEARCH[nextCrop] : ROTATION_RESEARCH[rotationId];
+  if (!evidence)
+    return (
+      <p className="research-scope">
+        No crop-specific study is linked for this option. Local review is required.
+      </p>
+    );
   return (
     <div className="rotation-research">
       <span className="research-label">PUBLISHED EVIDENCE · PARTIAL SUPPORT</span>
       <p>{evidence.rationale}</p>
-      {rotationId === "root-crop" && drainage !== "Good" && (
-        <p className="research-caution">
-          <strong>Drainage needs verification.</strong> Current profile: {drainage || "Unknown"}. Do
-          not infer sweetpotato suitability from the demo rank.
-        </p>
-      )}
+      {(nextCrop === "Sweet potato" || (!nextCrop && rotationId === "root-crop")) &&
+        drainage !== "Good" && (
+          <p className="research-caution">
+            <strong>Drainage needs verification.</strong> Current profile: {drainage || "Unknown"}.
+            Do not infer sweetpotato suitability from the demo rank.
+          </p>
+        )}
       <details>
         <summary>Research findings &amp; references</summary>
         {evidence.sources.map((id) => {

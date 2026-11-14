@@ -1601,3 +1601,49 @@
 .risk-low { background: rgba(22, 163, 74, 0.14); color: #166534; }
 .drawer-verification-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .drawer-verification-tags span { padding: 2px 7px; border-radius: 4px; background: rgba(11, 61, 145, 0.08); color: #0b3d91; font-size: 9.5px; font-weight: 700; }
+
+/* Keep the farmer's decision visible; disclose supporting data on demand. */
+.skip-link { position: fixed; top: -80px; left: 16px; z-index: 9999; background: var(--card); padding: 12px 20px; }
+.skip-link:focus { top: 12px; }
+.demo-context { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--card); }
+.review-panel, .weather-disclosure, .recovery-weather { padding: 16px 20px; margin-bottom: 16px; }
+.review-panel p, .review-panel li { font-size: 14px; line-height: 1.6; }
+.review-panel h2, .recovery-next h2 { font-size: 20px; font-weight: 650; margin-bottom: 16px; }
+.review-panel ul { padding-left: 20px; list-style: disc; margin: 12px 0; }
+summary { cursor: pointer; min-height: 44px; align-content: center; font-size: 14px; font-weight: 600; }
+summary:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.optional-details { border-top: 1px solid var(--border); margin-top: 16px; }
+.optional-details[open] > summary, .option-details[open] > summary { margin-bottom: 12px; }
+.recovery-layout { display: flex; flex-direction: column; max-width: 800px; margin-inline: auto; gap: 20px; }
+.recovery-left, .recovery-right, .recovery-weather { width: 100%; }
+.recovery-right { display: flex; flex-direction: column; gap: 20px; }
+.recovery-form-panel, .loss-panel { padding: 24px; border-radius: 14px; }
+.recovery-layout .panel-top h2 { font-size: 21px; }
+.recovery-layout .step-number, .recovery-layout .panel-eyebrow { display: none; }
+.recovery-layout label, .recovery-layout .historical-copy, .recovery-layout .next-steps > span, .recovery-disclaimer { font-size: 14px; line-height: 1.6; }
+.recovery-layout .form-field { margin-bottom: 12px; }
+.recovery-layout input:not([type="range"]), .recovery-layout select, .crop-history-fields input, .crop-history-fields select { min-height: 44px; font-size: 16px; }
+.recovery-layout .hazard-option { min-height: 48px; font-size: 14px; }
+.recovery-layout .range-label-row { flex-wrap: wrap; gap: 4px; }
+.recovery-layout .calculation-total { font-size: clamp(24px, 5vw, 36px); overflow-wrap: anywhere; }
+.recovery-layout .calculation-equation { flex-wrap: wrap; }
+.recovery-layout .recovery-weather { margin-bottom: 0; }
+.recovery-weather .historical-panel, .weather-disclosure .historical-panel { border: 0; padding: 12px 0; margin: 0; }
+.rotation-card { padding: 20px; border-radius: 12px; }
+.rotation-card h3 { font-size: 17px; min-height: 0; }
+.rotation-note { font-size: 14px; line-height: 1.6; min-height: 0; }
+.rotation-select { min-width: 44px; min-height: 44px; }
+.option-details { margin-top: 16px; border-top: 1px solid var(--border); }
+.rotation-actions { flex-wrap: wrap; gap: 8px; }
+.rotation-actions button { min-height: 44px; }
+.agri-overview-container { gap: 20px; }
+.agri-quick-actions button { min-height: 52px; }
+@media (max-width: 1024px) { .rotation-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .demo-context { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .recovery-form-panel, .loss-panel { padding: 16px; }
+  .recovery-layout .form-grid, .agri-quick-actions { grid-template-columns: 1fr; }
+  .recovery-actions { flex-direction: column; }
+  .recovery-actions button { width: 100%; min-height: 48px; }
+  .bottom-nav-label { font-size: 10px; }
+}

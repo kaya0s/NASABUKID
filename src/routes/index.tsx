@@ -83,6 +83,7 @@ import {
   type ClimateScenario,
   type RotationStrategy,
   rotationsForScenario,
+  SAMPLE_RECOVERY,
   SAMPLE_CORN_PRICE_PER_KG,
   SAMPLE_YIELD_KG_PER_HA,
 } from "@/lib/fieldshift-demo";
@@ -139,7 +140,7 @@ const NAV: Array<{
 }> = [
   { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
   { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
-  { id: "fullmap", label: "Full Map (New)", icon: Map, section: "WORKSPACE" },
+  { id: "fullmap", label: "Farm map", icon: Map, section: "WORKSPACE" },
   {
     id: "prevention",
     label: "Crop planning",
@@ -195,50 +196,7 @@ const SEED_FARM: Farm = {
   planted: "2026-06-15",
 };
 
-/**
- * Display toggles for footer and metadata sections.
- * Change to false to hide, or true to show.
- */
-const SHOW_API_SOURCES = false;
-const SHOW_FOOTER_NASA_INFO = false;
-const HAZARD_RATES: Record<
-  Hazard,
-  {
-    affected: number;
-    yieldLoss: number;
-    observation: string;
-    icon: typeof Waves;
-  }
-> = {
-  Flooding: {
-    affected: 65,
-    yieldLoss: 35,
-    observation:
-      "Standing water observed between rows; sample leaf yellowing and stem lodging visible.",
-    icon: Waves,
-  },
-  Drought: {
-    affected: 50,
-    yieldLoss: 28,
-    observation:
-      "Sample observation: leaf curling and dry surface soil are consistent with water stress.",
-    icon: Sun,
-  },
-  Typhoon: {
-    affected: 75,
-    yieldLoss: 42,
-    observation:
-      "Sample observation: wind lodging and damaged leaf tissue may reduce harvestable yield.",
-    icon: Wind,
-  },
-  Heat: {
-    affected: 45,
-    yieldLoss: 25,
-    observation:
-      "Sample observation: leaf-edge scorch and midday wilting may indicate heat stress.",
-    icon: Thermometer,
-  },
-};
+const HAZARD_ICONS = { Flooding: Waves, Drought: Sun, Typhoon: Wind, Heat: Thermometer };
 const PHP = new Intl.NumberFormat("en-PH", {
   style: "currency",
   currency: "PHP",
@@ -277,6 +235,7 @@ function FieldShift() {
   const [locationConfirmed, setLocationConfirmed] = useState(false);
   const [boundary, setBoundary] = useState<Coordinates[]>([]);
   const [eventWeather, setEventWeather] = useState<HistoricalWeather | null>(null);
+  const [mapClimate, setMapClimate] = useState<HistoricalWeather | null>(null);
   const [historical, setHistorical] = useState<HistoricalWeather | null>(null);
   const [climateLoading, setClimateLoading] = useState(false);
   const [terrain, setTerrain] = useState<{ elevation: number; slopePercent: number } | null>(null);
@@ -285,8 +244,8 @@ function FieldShift() {
   const [scenario, setScenario] = useState<ClimateScenario>("Typical");
   const [hazard, setHazard] = useState<Hazard>("Flooding");
   const [damageDate, setDamageDate] = useState("2026-10-29");
-  const [affected, setAffected] = useState(65);
-  const [yieldLoss, setYieldLoss] = useState(35);
+  const [affected, setAffected] = useState<number>(SAMPLE_RECOVERY.affected);
+  const [yieldLoss, setYieldLoss] = useState<number>(SAMPLE_RECOVERY.yieldLoss);
   const [photo, setPhoto] = useState<{
     src: string;
     name: string;
@@ -296,8 +255,8 @@ function FieldShift() {
     name: "Sample · waterlogged corn",
     sample: true,
   });
-  const [selectedRotation, setSelectedRotation] = useState("legume");
-  const [evidenceRotation, setEvidenceRotation] = useState("legume");
+  const [selectedRotation, setSelectedRotation] = useState("current-baseline");
+  const [evidenceRotation, setEvidenceRotation] = useState("current-baseline");
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -363,6 +322,8 @@ function FieldShift() {
   }, [farm, location, boundary, locationConfirmed, stored]);
 
   function updateLocation(next: Coordinates) {
+    setMapClimate(null);
+    setTerrain(null);
     setLocation(next);
     setBoundary([]);
     setHistorical(null);
@@ -381,6 +342,8 @@ function FieldShift() {
     setBoundary(points);
     if (points.length) {
       const measured = measureFarmBoundary(points);
+      setMapClimate(null);
+      setTerrain(null);
       setFarm((current) => ({
         ...current,
         area: measured.hectares.toFixed(4),
@@ -464,9 +427,9 @@ function FieldShift() {
   useEffect(() => {
     if (page !== "fullmap" || !locationConfirmed) return;
     if (
-      historical &&
-      Math.abs(historical.latitude - location.latitude) < 0.001 &&
-      Math.abs(historical.longitude - location.longitude) < 0.001
+      mapClimate &&
+      Math.abs(mapClimate.latitude - location.latitude) < 0.001 &&
+      Math.abs(mapClimate.longitude - location.longitude) < 0.001
     ) {
       return;
     }
@@ -475,7 +438,7 @@ function FieldShift() {
     fetchRecentNasaClimate(location, controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
-          setHistorical(data);
+          setMapClimate(data);
           setClimateLoading(false);
         }
       })
@@ -485,7 +448,7 @@ function FieldShift() {
         }
       });
     return () => controller.abort();
-  }, [page, locationConfirmed, location.latitude, location.longitude]);
+  }, [page, locationConfirmed, location, mapClimate]);
 
   function updateFarm(key: keyof Farm, value: string) {
     setProfileEdited(true);
@@ -504,8 +467,6 @@ function FieldShift() {
 
   function changeHazard(next: Hazard) {
     setHazard(next);
-    setAffected(HAZARD_RATES[next].affected);
-    setYieldLoss(HAZARD_RATES[next].yieldLoss);
   }
 
   async function sendQuestion(question = chatInput) {
@@ -576,41 +537,13 @@ function FieldShift() {
             layFallowPeriod: activeRotation.layFallowPeriod.slice(0, 280),
             pros: activeRotation.pros.slice(0, 6).map((item) => item.slice(0, 280)),
             cons: activeRotation.cons.slice(0, 6).map((item) => item.slice(0, 280)),
-            satelliteWhy: activeRotation.satelliteWhy.slice(0, 10).map((item) => item.slice(0, 280)),
-            evidenceGaps: activeRotation.evidenceGaps.slice(0, 10).map((item) => item.slice(0, 280)),
+            satelliteWhy: activeRotation.satelliteWhy
+              .slice(0, 10)
+              .map((item) => item.slice(0, 280)),
+            evidenceGaps: activeRotation.evidenceGaps
+              .slice(0, 10)
+              .map((item) => item.slice(0, 280)),
           },
-          agronomyAdvisory: (() => {
-            const monthly = historical ? monthlyWeather(historical.days) : null;
-            const adv = buildSoilAndAgronomyAdvisory({
-              nextCrop: activeRotation.nextCrop,
-              previousCrop: farm.previous,
-              ph: farm.ph.trim() && Number.isFinite(Number(farm.ph)) ? Number(farm.ph) : null,
-              soilTexture: farm.soil,
-              drainage: farm.drainage,
-              irrigation: farm.irrigation,
-              slopePercent: terrain?.slopePercent ?? null,
-              elevation: terrain?.elevation ?? null,
-              ...(monthly
-                ? {
-                    monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
-                    monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
-                  }
-                : {}),
-            });
-            return {
-              suitabilityStatus: adv.suitability.status.slice(0, 280),
-              phLabel: adv.soilProfile.phLabel.slice(0, 280),
-              mineralsNeeded: adv.soilProfile.mineralsNeeded.slice(0, 6).map((item) => item.slice(0, 280)),
-              recommendedFertilizers: adv.soilProfile.recommendedFertilizers
-                .slice(0, 6)
-                .map((item) => item.slice(0, 280)),
-              avoidFertilizers: adv.soilProfile.avoidFertilizers
-                .slice(0, 6)
-                .map((item) => item.slice(0, 280)),
-              bestPlantingWindow: adv.climateTiming.bestPlantingWindow.slice(0, 280),
-              prominentPestClimate: adv.climateTiming.prominentPestClimate.slice(0, 280),
-            };
-          })(),
         },
       };
       const response = await fetch("/api/advisor", {
@@ -646,7 +579,7 @@ function FieldShift() {
   const pageTitle: Record<Page, string> = {
     overview: "Overview",
     farm: "My farm",
-    fullmap: "Full Map (New)",
+    fullmap: "Farm map",
     prevention: "Crop planning",
     recovery: "Damage recovery",
     evidence: "Evidence & scoring",
@@ -664,7 +597,7 @@ function FieldShift() {
             <span className="brand-name">
               fieldshift<span className="brand-ai">ai</span>
             </span>
-            <span className="brand-caption">GROW WITH CONFIDENCE</span>
+            <span className="brand-caption">FARM PLANNING DEMO</span>
           </div>
         </div>
         <div className="workspace-label">
@@ -688,11 +621,11 @@ function FieldShift() {
                 )}
                 <button
                   className={`nav-item ${page === item.id ? "nav-item-active" : ""}`}
+                  aria-current={page === item.id ? "page" : undefined}
                   onClick={() => goTo(item.id)}
                 >
                   <Icon size={17} strokeWidth={1.8} />
                   <span>{item.label}</span>
-                  {item.id === "recovery" && <span className="nav-live-dot" />}
                 </button>
               </div>
             );
@@ -717,7 +650,10 @@ function FieldShift() {
         </div>
       </aside>
 
-      <main className="main-area">
+      <a href="#workspace" className="skip-link">
+        Skip to workspace
+      </a>
+      <main id="workspace" className="main-area">
         <header className="topbar">
           <div className="user-chip">
             <span className="user-avatar">B</span>
@@ -734,278 +670,293 @@ function FieldShift() {
             farm={farm}
             onUpdateFarm={updateFarm}
             onContinue={() => goTo("prevention")}
-            historical={historical}
+            historical={mapClimate}
             climateLoading={climateLoading}
             terrain={terrain}
             cropOptions={CROP_OPTIONS}
             previousCropOptions={PREVIOUS_CROP_OPTIONS}
           />
         ) : (
-        <div className="page-wrap">
-          <div className="page-intro">
-            <div>
+          <div className="page-wrap">
+            <div className="page-intro">
+              <div>
+                {page !== "overview" && (
+                  <span className="eyebrow">
+                    <MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}
+                  </span>
+                )}
+                <h1>{pageTitle[page]}</h1>
+                {page !== "overview" && (
+                  <p className="intro-copy">
+                    {page === "farm"
+                      ? "Choose your location and check your farm details."
+                      : page === "prevention"
+                        ? "Compare three crop options. Ratings are examples, not forecasts."
+                        : page === "recovery"
+                          ? "Record damage, estimate revenue at risk, and plan your next step."
+                          : page === "evidence"
+                            ? "Methodology and data sources behind rotation scores."
+                            : page === "chat"
+                              ? "Ask questions about your sample field plan."
+                              : ""}
+                  </p>
+                )}
+              </div>
               {page !== "overview" && (
-                <span className="eyebrow">
-                  <MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}
-                </span>
-              )}
-              <h1>{pageTitle[page]}</h1>
-              {page !== "overview" && (
-                <p className="intro-copy">
-                  {page === "farm"
-                    ? "Set your location, boundary, and field details for customized recommendations."
-                    : page === "prevention"
-                      ? "Compare climate-ready crop rotation plans for your field."
-                      : page === "recovery"
-                        ? "Estimate potential crop loss and planning next steps."
-                        : page === "evidence"
-                          ? "Methodology and data sources behind rotation scores."
-                          : page === "chat"
-                            ? "Ask questions about your sample field plan."
-                            : ""}
-                </p>
+                <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}>
+                  <ArrowLeft size={16} /> Overview
+                </Button>
               )}
             </div>
-            {page !== "overview" && (
-              <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}>
-                <ArrowLeft size={16} /> Overview
-              </Button>
-            )}
-          </div>
 
-          {page === "overview" && (
-            <OverviewPage
-              farm={farm}
-              location={location}
-              onLocationFound={(coords) => {
-                updateLocation(coords);
-              }}
-              onPlan={() => goTo("farm")}
-              onRecover={() => goTo("recovery")}
-              onPrevention={() => goTo("prevention")}
-              onChat={() => goTo("chat")}
-            />
-          )}
-          {page === "farm" && (
-            <FarmPage
-              farm={farm}
-              location={location}
-              boundary={boundary}
-              onBoundary={updateBoundary}
-              onLocation={updateLocation}
-              onUpdate={updateFarm}
-              onContinue={() => goTo("prevention")}
-            />
-          )}
-          {page === "prevention" && (
-            <>
-              <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
-              {historical && (
-                <div className="note-strip">
-                  <ShieldCheck size={16} />
-                  <span>
-                    Demo water context: actual NASA rainfall from {historical.start} to{" "}
-                    {historical.end}, using your planting month. Other ratings and thresholds remain
-                    illustrative. The charts above show the selected NASA year.
-                  </span>
-                  <button onClick={() => setHistorical(null)}>Clear historical context</button>
-                </div>
-              )}
-              <section className="panel">
-                <h2>Review before choosing a crop</h2>
-                <p>
-                  These are demo comparisons, not validated suitability decisions or yield
-                  forecasts. Income scores do not use production costs. Review every crop across its
-                  full growing season.
-                </p>
-                <ul>
-                  {planningReviewFlags(farm).map((flag) => (
-                    <li key={flag}>{flag}</li>
-                  ))}
-                </ul>
-              </section>
-              <PreventionPage
-                farm={farm}
-                setFarm={setFarm}
-                cropOptions={CROP_OPTIONS}
-                previousCropOptions={PREVIOUS_CROP_OPTIONS}
-                terrain={terrain}
-                historical={historical}
-                scenario={scenario}
-                setScenario={(next) => {
-                  setScenario(next);
-                  setHistorical(null);
-                }}
-                rotations={rotations}
-                selected={selectedRotation}
-                setSelected={setSelectedRotation}
-                onEvidence={(id) => {
-                  setEvidenceRotation(id);
-                  setEvidenceOpen(true);
-                }}
-                onChat={() => goTo("chat")}
-                onEvidencePage={() => goTo("evidence")}
-              />
-            </>
-          )}
-          {page === "recovery" && (
-            <>
-              <section className="panel">
-                <h2>Current crop and event details</h2>
-                <p>
-                  Optional farmer observations, not verified measurements. Blank fields stay
-                  unknown. Loss assumptions:{" "}
-                  {assumptionsEdited
-                    ? "edited, unverified; unchanged values may still be samples"
-                    : "sample defaults"}
-                  .
-                </p>
-                <div className="form-grid">
-                  <div className="form-field">
-                    <Label htmlFor="actual-planting">Actual planting date of damaged crop</Label>
-                    <Input
-                      id="actual-planting"
-                      type="date"
-                      max={damageDate}
-                      value={actualPlantingDate}
-                      onChange={(e) => setActualPlantingDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <Label htmlFor="growth-stage">Observed growth stage</Label>
-                    <Input
-                      id="growth-stage"
-                      maxLength={300}
-                      placeholder="Unknown"
-                      value={growthStage}
-                      onChange={(e) => setGrowthStage(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <Label htmlFor="event-duration">Event duration (hours)</Label>
-                    <Input
-                      id="event-duration"
-                      type="number"
-                      min="0"
-                      max="1000000000"
-                      value={durationHours}
-                      onChange={(e) => setDurationHours(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-field">
-                    <Label htmlFor="event-observations">What did you observe?</Label>
-                    <Textarea
-                      id="event-observations"
-                      maxLength={1200}
-                      value={observations}
-                      onChange={(e) => setObservations(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </section>
-              <RecoveryPage
-                onWeather={setEventWeather}
-                farm={farm}
-                hazard={hazard}
-                setHazard={changeHazard}
-                damageDate={damageDate}
-                setDamageDate={(value) => {
-                  setDamageDate(value);
-                  setEventWeather(null);
-                }}
-                affected={affected}
-                setAffected={(value) => {
-                  setAssumptionsEdited(true);
-                  setAffected(value);
-                }}
-                yieldLoss={yieldLoss}
-                setYieldLoss={(value) => {
-                  setAssumptionsEdited(true);
-                  setYieldLoss(value);
-                }}
-                price={price}
-                setPrice={(value) => {
-                  setAssumptionsEdited(true);
-                  setPrice(value);
-                }}
-                expectedYield={expectedYield}
-                setExpectedYield={(value) => {
-                  setAssumptionsEdited(true);
-                  setExpectedYield(value);
-                }}
-                validLossInputs={validLossInputs}
-                onUpdateFarm={updateFarm}
-                location={location}
-                photo={photo}
-                pickPhoto={pickPhoto}
-                uploadRef={uploadRef}
-                loss={loss}
-                onPlan={() => goTo("prevention")}
-                onChat={() => goTo("chat")}
-              />
-            </>
-          )}
-          {page === "evidence" && (
-            <EvidencePage
-              rotations={rotations}
-              scenario={scenario}
-              selected={evidenceRotation}
-              setSelected={setEvidenceRotation}
-              onChat={() => goTo("chat")}
-            />
-          )}
-          {page === "chat" && (
-            <>
-              <div className="form-field">
-                <Label htmlFor="advisor-workflow">Advice focus</Label>
-                <select
-                  id="advisor-workflow"
-                  value={advisorWorkflow}
-                  onChange={(e) => setAdvisorWorkflow(e.target.value as "recovery" | "prevention")}
-                >
-                  <option value="recovery">Damage recovery</option>
-                  <option value="prevention">Crop planning</option>
-                </select>
+            {!locationConfirmed && page !== "farm" && (
+              <div className="demo-context">
+                <span>Example farm · Set your location to use your own field.</span>
+                <Button variant="outline" size="sm" onClick={() => goTo("farm")}>
+                  Set farm location
+                </Button>
               </div>
-              <ChatPage
-                farm={farm}
-                messages={chatMessages}
-                busy={chatBusy}
-                input={chatInput}
-                setInput={setChatInput}
-                onSend={sendQuestion}
-                onSuggestion={sendQuestion}
-                scenario={scenario}
-                rotation={activeRotation.name}
-                hazard={hazard}
-                loss={lossLabel}
-              />
-            </>
-          )}
-
-          {SHOW_API_SOURCES && <ApiSources />}
-          <footer className="page-footer">
-            <span>
-              <Sprout size={14} /> Made for the seasons ahead.
-            </span>
-            {SHOW_FOOTER_NASA_INFO && (
-              <span>
-                FieldShift AI <span className="footer-divider">·</span> NASA Space Apps demo{" "}
-                <span className="footer-divider">·</span> Historical NASA access · Demo scores ·
-                Gemini advisor
-              </span>
             )}
-          </footer>
-        </div>
+            {page === "overview" && (
+              <OverviewPage
+                farm={farm}
+                location={location}
+                onLocationFound={(coords) => {
+                  updateLocation(coords);
+                }}
+                onPlan={() => goTo("farm")}
+                onRecover={() => goTo("recovery")}
+                onPrevention={() => goTo("prevention")}
+                onChat={() => goTo("chat")}
+              />
+            )}
+            {page === "farm" && (
+              <FarmPage
+                farm={farm}
+                location={location}
+                boundary={boundary}
+                onBoundary={updateBoundary}
+                onLocation={updateLocation}
+                onUpdate={updateFarm}
+                onContinue={() => goTo("prevention")}
+              />
+            )}
+            {page === "prevention" && (
+              <>
+                <details className="panel weather-disclosure">
+                  <summary>Explore historical NASA weather</summary>
+                  <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
+                </details>
+                {historical && (
+                  <div className="note-strip">
+                    <ShieldCheck size={16} />
+                    <span>
+                      Demo water context: actual NASA rainfall from {historical.start} to{" "}
+                      {historical.end}, using your planting month. Other ratings and thresholds
+                      remain illustrative. The charts above show the selected NASA year.
+                    </span>
+                    <button onClick={() => setHistorical(null)}>Clear historical context</button>
+                  </div>
+                )}
+                <details className="panel review-panel">
+                  <summary>Checks before choosing a crop</summary>
+                  <p>
+                    These are demo comparisons, not validated suitability decisions or yield
+                    forecasts. Income scores do not use production costs. Review every crop across
+                    its full growing season.
+                  </p>
+                  <ul>
+                    {planningReviewFlags(farm).map((flag) => (
+                      <li key={flag}>{flag}</li>
+                    ))}
+                  </ul>
+                </details>
+                <PreventionPage
+                  farm={farm}
+                  setFarm={setFarm}
+                  cropOptions={CROP_OPTIONS}
+                  previousCropOptions={PREVIOUS_CROP_OPTIONS}
+                  terrain={terrain}
+                  historical={historical}
+                  scenario={scenario}
+                  setScenario={(next) => {
+                    setScenario(next);
+                    setHistorical(null);
+                  }}
+                  rotations={rotations}
+                  selected={selectedRotation}
+                  setSelected={setSelectedRotation}
+                  onEvidence={(id) => {
+                    setEvidenceRotation(id);
+                    setEvidenceOpen(true);
+                  }}
+                  onChat={() => goTo("chat")}
+                  onEvidencePage={() => goTo("evidence")}
+                />
+              </>
+            )}
+            {page === "recovery" && (
+              <>
+                <RecoveryPage
+                  areaFromBoundary={boundary.length > 0}
+                  onEditFarm={() => goTo("farm")}
+                  eventNotes={
+                    <details className="optional-details">
+                      <summary>Add observations (optional)</summary>{" "}
+                      <div className="form-grid">
+                        <div className="form-field">
+                          <Label htmlFor="actual-planting">
+                            Actual planting date of damaged crop
+                          </Label>
+                          <Input
+                            id="actual-planting"
+                            type="date"
+                            max={damageDate}
+                            value={actualPlantingDate}
+                            onChange={(e) => setActualPlantingDate(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-field">
+                          <Label htmlFor="growth-stage">Observed growth stage</Label>
+                          <Input
+                            id="growth-stage"
+                            maxLength={300}
+                            placeholder="Unknown"
+                            value={growthStage}
+                            onChange={(e) => setGrowthStage(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-field">
+                          <Label htmlFor="event-duration">Event duration (hours)</Label>
+                          <Input
+                            id="event-duration"
+                            type="number"
+                            min="0"
+                            max="1000000000"
+                            value={durationHours}
+                            onChange={(e) => setDurationHours(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-field">
+                          <Label htmlFor="event-observations">What did you observe?</Label>
+                          <Textarea
+                            id="event-observations"
+                            maxLength={1200}
+                            value={observations}
+                            onChange={(e) => setObservations(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </details>
+                  }
+                  assumptionsEdited={assumptionsEdited}
+                  onWeather={setEventWeather}
+                  farm={farm}
+                  hazard={hazard}
+                  setHazard={changeHazard}
+                  damageDate={damageDate}
+                  setDamageDate={(value) => {
+                    setDamageDate(value);
+                    setEventWeather(null);
+                  }}
+                  affected={affected}
+                  setAffected={(value) => {
+                    setAssumptionsEdited(true);
+                    setAffected(value);
+                  }}
+                  yieldLoss={yieldLoss}
+                  setYieldLoss={(value) => {
+                    setAssumptionsEdited(true);
+                    setYieldLoss(value);
+                  }}
+                  price={price}
+                  setPrice={(value) => {
+                    setAssumptionsEdited(true);
+                    setPrice(value);
+                  }}
+                  expectedYield={expectedYield}
+                  setExpectedYield={(value) => {
+                    setAssumptionsEdited(true);
+                    setExpectedYield(value);
+                  }}
+                  validLossInputs={validLossInputs}
+                  onUpdateFarm={updateFarm}
+                  location={location}
+                  photo={photo}
+                  pickPhoto={pickPhoto}
+                  uploadRef={uploadRef}
+                  loss={loss}
+                  onPlan={() => goTo("prevention")}
+                  onChat={() => goTo("chat")}
+                />
+              </>
+            )}
+            {page === "evidence" && (
+              <EvidencePage
+                rotations={rotations}
+                scenario={scenario}
+                selected={evidenceRotation}
+                setSelected={setEvidenceRotation}
+                onChat={() => {
+                  setSelectedRotation(evidenceItem.id);
+                  goTo("chat");
+                }}
+              />
+            )}
+            {page === "chat" && (
+              <>
+                <div className="form-field">
+                  <Label htmlFor="advisor-workflow">Advice focus</Label>
+                  <select
+                    id="advisor-workflow"
+                    value={advisorWorkflow}
+                    onChange={(e) =>
+                      setAdvisorWorkflow(e.target.value as "recovery" | "prevention")
+                    }
+                  >
+                    <option value="recovery">Damage recovery</option>
+                    <option value="prevention">Crop planning</option>
+                  </select>
+                </div>
+                <ChatPage
+                  farm={farm}
+                  messages={chatMessages}
+                  busy={chatBusy}
+                  input={chatInput}
+                  setInput={setChatInput}
+                  onSend={sendQuestion}
+                  onSuggestion={sendQuestion}
+                  scenario={scenario}
+                  rotation={activeRotation.name}
+                  hazard={hazard}
+                  loss={lossLabel}
+                />
+              </>
+            )}
+
+            <ApiSources />
+            <footer className="page-footer">
+              <span>
+                <Sprout size={14} /> NASA Space Apps prototype · Not validated field advice
+              </span>
+              <button onClick={() => goTo("evidence")}>Sources & limitations</button>
+            </footer>
+          </div>
         )}
-        <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
+        <div hidden={page !== "farm"}>
+          <FarmPublicData
+            location={location}
+            confirmed={locationConfirmed}
+            onApply={applyContext}
+          />
+        </div>
 
         <nav
           className="bottom-nav-dock"
           aria-label="Mobile navigation"
           aria-hidden={!isMobile ? "true" : undefined}
         >
-          {NAV.filter((item) => item.id !== "evidence").map((item) => {
+          {NAV.filter((item) => !["evidence", "fullmap"].includes(item.id)).map((item) => {
             const Icon = item.icon;
             const isActive = page === item.id;
             if (item.isCenter) {
@@ -1032,7 +983,6 @@ function FieldShift() {
               >
                 <span className="bottom-nav-icon">
                   <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
-                  {item.id === "recovery" && <span className="nav-live-dot" />}
                 </span>
                 <span className="bottom-nav-label">{item.label}</span>
               </button>
@@ -1058,11 +1008,7 @@ function FieldShift() {
               <div className="modal-total">
                 <span>{evidenceItem.total}</span>
                 <span> / 100 weighted score</span>
-                <span className="rank-pill">
-                  {rotations.findIndex((entry) => entry.id === evidenceItem.id) === 0
-                    ? "TOP SAMPLE MATCH"
-                    : "ALTERNATIVE"}
-                </span>
+                <span className="rank-pill">DEMO SCORE</span>
               </div>
               <ScoreBreakdown scores={evidenceItem.scores} />
               <p className="modal-note">{evidenceItem.note}</p>
@@ -1070,6 +1016,7 @@ function FieldShift() {
                 className="w-full"
                 onClick={() => {
                   setEvidenceOpen(false);
+                  setSelectedRotation(evidenceItem.id);
                   goTo("chat");
                 }}
               >
@@ -1087,7 +1034,7 @@ function OverviewPage({
   farm: _farm,
   location,
   onLocationFound,
-  onPlan: _onPlan,
+  onPlan,
   onRecover,
   onPrevention,
   onChat,
@@ -1103,18 +1050,21 @@ function OverviewPage({
   return (
     <div className="agri-overview-container">
       {/* Top Agricultural Weather & Greeting Banner */}
-      <OverviewWeatherWidget location={location} onLocationFound={onLocationFound} />
 
       {/* Quick Actions Row */}
       <div className="agri-quick-actions">
-        <Button size="lg" className="agri-btn-primary" onClick={onPrevention}>
-          <Wheat size={18} /> Plan My Crops
+        <Button size="lg" className="agri-btn-primary" onClick={onPlan}>
+          <MapPin size={18} /> Set up my farm
         </Button>
-        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
-          <MessageCircle size={18} /> Ask Advisor
+        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onRecover}>
+          <HeartHandshake size={18} /> Check crop damage
         </Button>
       </div>
 
+      <details className="panel weather-disclosure">
+        <summary>Current weather · Open-Meteo</summary>
+        <OverviewWeatherWidget location={location} onLocationFound={onLocationFound} />
+      </details>
       {/* Modern Visual Cards with Images & Bookmarks */}
       <div className="agri-cards-scroller">
         <article
@@ -1131,20 +1081,9 @@ function OverviewPage({
         >
           <div className="agri-card-media">
             <img src={bukidnonFields} alt="Bukidnon crop planning field" />
-            <button
-              type="button"
-              className="agri-bookmark-btn"
-              aria-label="Crop Planning"
-              onClick={(e) => {
-                e.stopPropagation();
-                onPrevention();
-              }}
-            >
-              <Sprout size={16} />
-            </button>
           </div>
           <div className="agri-card-info">
-            <h3>Optimize Crop Harvest</h3>
+            <h3>Compare crop options</h3>
             <p>Compare crop rotation sequences for upcoming dry or wet seasons.</p>
             <div className="agri-card-foot">
               <span className="agri-tag">Crop Planning</span>
@@ -1168,22 +1107,11 @@ function OverviewPage({
           }}
         >
           <div className="agri-card-media">
-            <img src={floodCorn} alt="Damage check field in Bukidnon" />
-            <button
-              type="button"
-              className="agri-bookmark-btn"
-              aria-label="Damage Assessment"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRecover();
-              }}
-            >
-              <HeartHandshake size={16} />
-            </button>
+            <img src={floodCorn} alt="Example of crop damage" />
           </div>
           <div className="agri-card-info">
-            <h3>Field Damage Check</h3>
-            <p>Calculate weather loss and evaluate stand recovery after storms.</p>
+            <h3>Check crop damage</h3>
+            <p>Estimate revenue at risk using your own observations.</p>
             <div className="agri-card-foot">
               <span className="agri-tag tag-coral">Damage Assessment</span>
               <span className="agri-action-arrow">
@@ -1435,34 +1363,14 @@ function PreventionPage({
   onEvidencePage: () => void;
 }) {
   const activeStrategy = rotations.find((item) => item.id === selected) ?? rotations[0]!;
-  const monthly = historical ? monthlyWeather(historical.days) : null;
-  const advisory = buildSoilAndAgronomyAdvisory({
-    nextCrop: activeStrategy.nextCrop,
-    previousCrop: farm.previous,
-    ph: farm.ph.trim() && Number.isFinite(Number(farm.ph)) ? Number(farm.ph) : null,
-    soilTexture: farm.soil,
-    drainage: farm.drainage,
-    irrigation: farm.irrigation,
-    slopePercent: terrain?.slopePercent ?? null,
-    elevation: terrain?.elevation ?? null,
-    ...(monthly
-      ? {
-          monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
-          monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
-        }
-      : {}),
-  });
 
   return (
     <>
       <section className="panel crop-history-bar">
         <div className="crop-history-copy">
-          <span className="eyebrow">CROP HISTORY &amp; NEXT-CROP PREDICTOR</span>
+          <span className="eyebrow">CROP HISTORY</span>
           <h3>Compare your current rotation against two alternatives</h3>
-          <p>
-            Adjust your previous and current crop below. Predictions combine NASA POWER rainfall,
-            SoilGrids pH, and terrain slope with transparent trade-offs and information gaps.
-          </p>
+          <p>Check your crop history, then select an option to discuss with a local technician.</p>
         </div>
         <div className="crop-history-fields">
           <label>
@@ -1546,10 +1454,10 @@ function PreventionPage({
         <div className="section-title-row">
           <div>
             <span className="eyebrow">THREE WAYS TO ROTATE</span>
-            <h2>A season plan worth considering.</h2>
+            <h2>Compare your next crop</h2>
             <p>
-              Published research explains why each option is worth considering. The order still
-              comes from demo scores, not a validated comparison of these sequences.
+              Your current pattern comes first, followed by two examples. These are not ranked
+              recommendations.
             </p>
           </div>
           <Button variant="outline" onClick={onEvidencePage}>
@@ -1560,18 +1468,18 @@ function PreventionPage({
           {rotations.map((rotation, index) => (
             <article
               key={rotation.id}
-              className={`rotation-card ${selected === rotation.id ? "rotation-selected" : ""}`}
+              className={`rotation-card ${activeStrategy.id === rotation.id ? "rotation-selected" : ""}`}
             >
               <div className="rotation-card-top">
                 <span className="rotation-rank">
                   <span>{String(index + 1).padStart(2, "0")}</span> {rotation.strategyLabel}
                 </span>
                 <button
-                  className={`rotation-select ${selected === rotation.id ? "rotation-select-on" : ""}`}
-                  aria-label={`${selected === rotation.id ? "Selected" : "Select"}: ${rotation.name}`}
+                  className={`rotation-select ${activeStrategy.id === rotation.id ? "rotation-select-on" : ""}`}
+                  aria-label={`${activeStrategy.id === rotation.id ? "Selected" : "Select"}: ${rotation.name}`}
                   onClick={() => setSelected(rotation.id)}
                 >
-                  {selected === rotation.id ? <Check size={14} /> : <span />}
+                  {activeStrategy.id === rotation.id ? <Check size={14} /> : <span />}
                 </button>
               </div>
               <div className="rotation-crop-media">
@@ -1585,84 +1493,94 @@ function PreventionPage({
               </div>
               <h3>{rotation.name}</h3>
               <p className="rotation-note">{rotation.note}</p>
-              <div className="rotation-score">
-                <span className="score-number">
-                  {rotation.total}
-                  <small> / 100</small>
-                </span>
-                <ScoreRing score={rotation.total} />
-                <div className="rotation-rank-caption">
-                  {rotation.isCurrentRotation
-                    ? "CURRENT BASELINE"
-                    : index === 0
-                      ? "HIGHEST SAMPLE SCORE"
-                      : "ALTERNATIVE ROTATION"}
+              <details className="option-details">
+                <summary>Scores, trade-offs & sources</summary>
+                <div className="rotation-score">
+                  <span className="score-number">
+                    {rotation.total}
+                    <small> / 100</small>
+                  </span>
+                  <ScoreRing score={rotation.total} />
+                  <div className="rotation-rank-caption">
+                    {rotation.isCurrentRotation ? "CURRENT BASELINE" : "ALTERNATIVE ROTATION"}
+                  </div>
                 </div>
-              </div>
-              <ScoreBreakdown scores={rotation.scores} />
-              <div className="rotation-tradeoffs">
-                <div className="tradeoff-col tradeoff-pros">
-                  <strong>Pros</strong>
-                  <ul>
-                    {rotation.pros.map((item) => (
-                      <li key={item}>{item}</li>
+                <ScoreBreakdown scores={rotation.scores} />
+                <div className="rotation-tradeoffs">
+                  <div className="tradeoff-col tradeoff-pros">
+                    <strong>Pros</strong>
+                    <ul>
+                      {rotation.pros.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="tradeoff-col tradeoff-cons">
+                    <strong>Cons &amp; risks</strong>
+                    <ul>
+                      {rotation.cons.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                <div className="rotation-fallow-note">
+                  <strong>Lay fallow / rest period:</strong> {rotation.layFallowPeriod}
+                </div>
+                <details className="rotation-pests">
+                  <summary>
+                    Possible pests &amp; diseases ({rotation.pestsAndDiseases.length})
+                  </summary>
+                  <div className="pest-list">
+                    {rotation.pestsAndDiseases.map((pest) => (
+                      <div key={pest.name} className="pest-item">
+                        <strong>{pest.name}</strong>
+                        <span>
+                          <b>Risk window:</b> {pest.riskWindow}
+                        </span>
+                        <span>
+                          <b>Mitigation:</b> {pest.mitigation}
+                        </span>
+                      </div>
                     ))}
-                  </ul>
-                </div>
-                <div className="tradeoff-col tradeoff-cons">
-                  <strong>Cons &amp; risks</strong>
-                  <ul>
-                    {rotation.cons.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              <div className="rotation-fallow-note">
-                <strong>Lay fallow / rest period:</strong> {rotation.layFallowPeriod}
-              </div>
-              <details className="rotation-pests">
-                <summary>
-                  Possible pests &amp; diseases ({rotation.pestsAndDiseases.length})
-                </summary>
-                <div className="pest-list">
-                  {rotation.pestsAndDiseases.map((pest) => (
-                    <div key={pest.name} className="pest-item">
-                      <strong>{pest.name}</strong>
-                      <span>
-                        <b>Risk window:</b> {pest.riskWindow}
-                      </span>
-                      <span>
-                        <b>Mitigation:</b> {pest.mitigation}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                  </div>
+                </details>
+                <details className="rotation-why-gaps">
+                  <summary>Inputs & missing information</summary>
+                  <div className="why-gaps-body">
+                    <strong>Reported inputs & demo rules</strong>
+                    <ul>
+                      {rotation.satelliteWhy.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                    <strong>Information gaps &amp; local review</strong>
+                    <ul>
+                      {rotation.evidenceGaps.map((gap) => (
+                        <li key={gap}>{gap}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </details>
+                <RotationResearch
+                  rotationId={rotation.id}
+                  nextCrop={rotation.nextCrop}
+                  drainage={farm.drainage}
+                />
+                <RotationEvidence rotation={rotation} farm={farm} historical={historical} />
               </details>
-              <details className="rotation-why-gaps">
-                <summary>Why this rotation (satellite evidence &amp; gaps)</summary>
-                <div className="why-gaps-body">
-                  <strong>Satellite &amp; field signals</strong>
-                  <ul>
-                    {rotation.satelliteWhy.map((reason) => (
-                      <li key={reason}>{reason}</li>
-                    ))}
-                  </ul>
-                  <strong>Information gaps &amp; local review</strong>
-                  <ul>
-                    {rotation.evidenceGaps.map((gap) => (
-                      <li key={gap}>{gap}</li>
-                    ))}
-                  </ul>
-                </div>
-              </details>
-              <RotationResearch rotationId={rotation.id} drainage={farm.drainage} />
-              <RotationEvidence rotation={rotation} farm={farm} historical={historical} />
               <div className="rotation-actions">
                 <Button variant="outline" size="sm" onClick={() => onEvidence(rotation.id)}>
                   <FileText size={14} /> View evidence
                 </Button>
-                <Button variant="ghost" size="sm" onClick={onChat}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelected(rotation.id);
+                    onChat();
+                  }}
+                >
                   <MessageCircle size={14} /> Ask the advisor
                 </Button>
               </div>
@@ -1678,92 +1596,33 @@ function PreventionPage({
           </span>
         </div>
       </section>
-      <section className="panel agronomy-advisory-panel">
-        <div className="section-title-row">
-          <div>
-            <span className="eyebrow">SOIL, FERTILIZER TIMING &amp; SUITABILITY</span>
-            <h2>Field &amp; crop guidance for {activeStrategy.nextCrop}</h2>
-            <p>
-              Illustrative screening based on SoilGrids pH, terrain slope, and NASA POWER rainfall
-              patterns. Confirm with a local soil test and agricultural technician.
-            </p>
-          </div>
-          <span
-            className={`suitability-pill suitability-${advisory.suitability.status.toLowerCase().replace(/[^a-z]+/g, "-")}`}
-          >
-            {advisory.suitability.status}
-          </span>
-        </div>
-
-        <div className="advisory-grid">
-          <div className="advisory-card">
-            <h3>Planting suitability &amp; terrain</h3>
-            <p className="advisory-summary">{advisory.suitability.summary}</p>
-            <ul>
-              {advisory.suitability.flags.map((flag) => (
-                <li key={flag}>{flag}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="advisory-card">
-            <h3>Soil pH &amp; mineral needs</h3>
-            <p className="advisory-summary">
-              <strong>{advisory.soilProfile.phLabel}</strong>
-            </p>
-            <strong>Minerals likely needed</strong>
-            <ul>
-              {advisory.soilProfile.mineralsNeeded.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <strong className="advisory-subhead">Recommended fertilizers</strong>
-            <ul>
-              {advisory.soilProfile.recommendedFertilizers.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <strong className="advisory-subhead">Avoid / use with caution</strong>
-            <ul>
-              {advisory.soilProfile.avoidFertilizers.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="advisory-card">
-            <h3>Fertilizer timing by growth stage</h3>
-            <div className="fertilizer-stages">
-              {advisory.fertilizerStages.map((step) => (
-                <div key={step.stage} className="fertilizer-stage-item">
-                  <div className="stage-header">
-                    <strong>{step.stage}</strong>
-                    <span>{step.timing}</span>
-                  </div>
-                  <p>{step.guidance}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="advisory-card">
-            <h3>Planting window &amp; pest climate</h3>
-            <div className="climate-timing-block">
-              <strong>Best time to plant</strong>
-              <p>{advisory.climateTiming.bestPlantingWindow}</p>
-            </div>
-            <div className="climate-timing-block">
-              <strong>When pests &amp; diseases peak</strong>
-              <p>{advisory.climateTiming.prominentPestClimate}</p>
-            </div>
-          </div>
-        </div>
+      <section className="panel review-panel">
+        <h2>Before planting {activeStrategy.nextCrop}</h2>
+        <p>
+          Check drainage, seed availability, planting dates, and local demand with an agricultural
+          technician. A soil test is needed before choosing fertilizer or lime.
+        </p>
+        <details>
+          <summary>Missing information for this option</summary>
+          <ul>
+            {activeStrategy.evidenceGaps.map((gap) => (
+              <li key={gap}>{gap}</li>
+            ))}
+          </ul>
+        </details>
+        <Button onClick={onChat}>
+          <MessageCircle size={16} /> Discuss selected option
+        </Button>
       </section>
     </>
   );
 }
 
 function RecoveryPage({
+  areaFromBoundary,
+  onEditFarm,
+  eventNotes,
+  assumptionsEdited,
   onWeather,
   farm,
   hazard,
@@ -1788,6 +1647,10 @@ function RecoveryPage({
   location,
   onUpdateFarm,
 }: {
+  areaFromBoundary: boolean;
+  onEditFarm: () => void;
+  eventNotes: ReactNode;
+  assumptionsEdited: boolean;
   onWeather: (weather: HistoricalWeather | null) => void;
   onUpdateFarm: (key: keyof Farm, value: string) => void;
   price: string;
@@ -1812,7 +1675,13 @@ function RecoveryPage({
   onPlan: () => void;
   onChat: () => void;
 }) {
-  const HazardIcon = HAZARD_RATES[hazard].icon;
+  const HazardIcon = HAZARD_ICONS[hazard];
+  const validTimeline = Boolean(
+    damageDate &&
+    damageDate <= new Date().toISOString().slice(0, 10) &&
+    farm.planted &&
+    farm.planted >= damageDate,
+  );
   return (
     <div className="recovery-layout">
       <div className="recovery-left">
@@ -1823,16 +1692,28 @@ function RecoveryPage({
                 <HeartHandshake size={13} /> FIRST, A FEW DETAILS{" "}
                 <span className="panel-demotag">DEMO</span>
               </span>
-              <h2>Tell us about the event.</h2>
+              <h2>1. Describe the damage</h2>
             </div>
             <span className="step-number">
               01 <span>/ 03</span>
             </span>
           </div>
+          <div className="form-field">
+            <Label htmlFor="damaged-crop">Damaged crop</Label>
+            <select
+              id="damaged-crop"
+              value={farm.crop}
+              onChange={(e) => onUpdateFarm("crop", e.target.value)}
+            >
+              {CROP_OPTIONS.map((crop) => (
+                <option key={crop}>{crop}</option>
+              ))}
+            </select>
+          </div>
           <Label className="form-section-label">What happened?</Label>
           <div className="hazard-options">
-            {(Object.keys(HAZARD_RATES) as Hazard[]).map((value) => {
-              const Icon = HAZARD_RATES[value].icon;
+            {(Object.keys(HAZARD_ICONS) as Hazard[]).map((value) => {
+              const Icon = HAZARD_ICONS[value];
               return (
                 <button
                   className={`hazard-option ${hazard === value ? "hazard-selected" : ""}`}
@@ -1853,84 +1734,82 @@ function RecoveryPage({
               <Input
                 id="damage-date"
                 type="date"
+                max={new Date().toISOString().slice(0, 10)}
                 value={damageDate}
                 onChange={(e) => setDamageDate(e.target.value)}
               />
             </div>
             <div className="form-field">
-              <Label>Farm area</Label>
-              <div className="input-readonly">
-                <Sprout size={15} /> {farm.area}{" "}
-                <span>
-                  hectares <span className="footer-divider">·</span> from My farm
+              <Label htmlFor="recovery-area">Farm area (ha)</Label>
+              <Input
+                readOnly={areaFromBoundary}
+                id="recovery-area"
+                type="number"
+                min="0"
+                step="any"
+                value={farm.area}
+                onChange={(e) => onUpdateFarm("area", e.target.value)}
+              />
+              {areaFromBoundary && (
+                <Button variant="link" onClick={onEditFarm}>
+                  Edit farm boundary to change area
+                </Button>
+              )}
+            </div>
+          </div>
+          {eventNotes}
+          <details className="optional-details">
+            <summary>Add a photo (optional · not analyzed)</summary>
+            <div className="photo-heading">
+              <div>
+                <Label>
+                  Crop photo <span className="optional-label">OPTIONAL</span>
+                </Label>
+                <span className="photo-caption">
+                  Add a photo or explore using the labeled sample.
                 </span>
               </div>
+              <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
+                <Upload size={14} /> Add a photo
+              </Button>
+              <input
+                ref={uploadRef}
+                className="sr-only"
+                type="file"
+                accept="image/*"
+                aria-label="Upload crop photo"
+                onChange={(event) => pickPhoto(event.target.files?.[0])}
+              />
             </div>
-          </div>
-          <div className="photo-heading">
-            <div>
-              <Label>
-                Crop photo <span className="optional-label">OPTIONAL</span>
-              </Label>
-              <span className="photo-caption">
-                Add a photo or explore using the labeled sample.
+            <button
+              className="photo-preview"
+              onClick={() => uploadRef.current?.click()}
+              aria-label="Choose a crop photo"
+            >
+              <img
+                src={photo.src}
+                alt={
+                  photo.sample
+                    ? "Sample farm crop in waterlogged soil"
+                    : "Farmer-uploaded crop photo; not analyzed"
+                }
+              />
+              <span className="photo-badge">
+                <ImagePlus size={12} /> {photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
               </span>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
-              <Upload size={14} /> Add a photo
-            </Button>
-            <input
-              ref={uploadRef}
-              className="sr-only"
-              type="file"
-              accept="image/*"
-              aria-label="Upload crop photo"
-              onChange={(event) => pickPhoto(event.target.files?.[0])}
-            />
-          </div>
-          <button
-            className="photo-preview"
-            onClick={() => uploadRef.current?.click()}
-            aria-label="Choose a crop photo"
-          >
-            <img
-              src={photo.src}
-              alt={
-                photo.sample
-                  ? "Sample farm crop in waterlogged soil"
-                  : "Farmer-uploaded crop photo; not analyzed"
-              }
-            />
-            <span className="photo-badge">
-              <ImagePlus size={12} /> {photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
+              <span className="photo-overlay">
+                <span>
+                  <Upload size={16} /> Change photo
+                </span>
+              </span>
+            </button>
+            <span className="file-caption">
+              {photo.name} <span>· Image preview stays in this browser only</span>
             </span>
-            <span className="photo-overlay">
-              <span>
-                <Upload size={16} /> Change photo
-              </span>
-            </span>
-          </button>
-          <span className="file-caption">
-            {photo.name} <span>· Image preview stays in this browser only</span>
-          </span>
-          <div className="observations">
-            <div className="observation-head">
-              <span>
-                <BadgeCheck size={14} /> SAMPLE OBSERVATIONS
-              </span>
-              <span>NOT AI-ANALYZED</span>
-            </div>
-            <p>{HAZARD_RATES[hazard].observation}</p>
-          </div>
+          </details>
         </section>
       </div>
       <aside className="recovery-right">
-        <HistoricalWeatherPanel
-          key={`${location.latitude}:${location.longitude}:${damageDate}`}
-          location={location}
-          eventDate={damageDate}
-          onLoaded={onWeather}
-        />
         <section className="panel loss-panel">
           <div className="panel-top">
             <div>
@@ -1938,7 +1817,7 @@ function RecoveryPage({
                 <BarChart3 size={13} /> PLANNING ESTIMATE{" "}
                 <span className="panel-demotag">DEMO</span>
               </span>
-              <h2>A starting point, not a verdict.</h2>
+              <h2>2. Estimate revenue at risk</h2>
             </div>
             <span className="step-number">
               02 <span>/ 03</span>
@@ -1969,8 +1848,10 @@ function RecoveryPage({
             </div>
           </div>
           <p className="historical-copy">
-            Defaults are sample corn assumptions. Enter crop-specific yield and price for{" "}
-            {farm.crop}. Gross revenue at risk excludes costs and insurance.
+            {assumptionsEdited
+              ? "Edited assumptions; check every value."
+              : "Sample corn values — replace these with your estimates."}{" "}
+            This is gross revenue at risk, excluding costs and insurance.
           </p>
           <RangeField
             id="affected-area"
@@ -1986,29 +1867,35 @@ function RecoveryPage({
             setValue={setYieldLoss}
             help="Illustrative estimate"
           />
-          <div className="calculation-box">
+          <div className="calculation-box" aria-live="polite">
             <span className="calculation-title">
               <span /> GROSS REVENUE AT RISK
             </span>
             <div className="calculation-total">
               {validLossInputs ? PHP.format(loss) : "Enter valid assumptions"} <span>PHP</span>
             </div>
-            <div className="calculation-equation">
-              <span>{farm.area} ha</span>
-              <i>×</i>
-              <span>{affected}%</span>
-              <i>×</i>
-              <span>{Number(expectedYield).toLocaleString()} kg/ha</span>
-              <i>×</i>
-              <span>{yieldLoss}%</span>
-              <i>×</i>
-              <span>₱{price}/kg</span>
-            </div>
-            <div className="calculation-foot">
-              Farm area × affected share × entered yield × yield-loss fraction × entered price.
-              Figures are editable planning assumptions, not a verified claim.
-            </div>
+            <details>
+              <summary>How this is calculated</summary>
+              <div className="calculation-equation">
+                <span>{farm.area} ha</span>
+                <i>×</i>
+                <span>{affected}%</span>
+                <i>×</i>
+                <span>{Number(expectedYield).toLocaleString()} kg/ha</span>
+                <i>×</i>
+                <span>{yieldLoss}%</span>
+                <i>×</i>
+                <span>₱{price}/kg</span>
+              </div>
+              <div className="calculation-foot">
+                Farm area × affected share × entered yield × yield-loss fraction × entered price.
+                Figures are editable planning assumptions, not a verified claim.
+              </div>
+            </details>
           </div>
+        </section>
+        <section className="panel loss-panel recovery-next">
+          <h2>3. Review next steps</h2>
           <div className="next-steps-label">
             <ShieldCheck size={15} /> POSSIBLE NEXT STEPS
           </div>
@@ -2046,11 +1933,16 @@ function RecoveryPage({
             </div>
           </div>
           <p className="historical-copy">
-            These farmer-reported inputs update the same profile and demo comparison used in
-            prevention. Confirm field readiness before planting.
+            Check field readiness with a local technician before planting.
           </p>
+          {!validTimeline && (
+            <p role="status">
+              Enter a past or current event date and a next planting date on or after it to
+              continue.
+            </p>
+          )}
           <div className="recovery-actions">
-            <Button disabled={!farm.planted || farm.planted < damageDate} onClick={onPlan}>
+            <Button disabled={!validTimeline} onClick={onPlan}>
               Compare next-season options <ArrowRight size={15} />
             </Button>
             <Button variant="ghost" onClick={onChat}>
@@ -2062,11 +1954,20 @@ function RecoveryPage({
           </span>
         </section>
       </aside>
+      <details className="panel recovery-weather">
+        <summary>Check historical NASA weather (optional)</summary>{" "}
+        <HistoricalWeatherPanel
+          key={`${location.latitude}:${location.longitude}:${damageDate}`}
+          location={location}
+          eventDate={damageDate}
+          onLoaded={onWeather}
+        />
+      </details>
       <div className="recovery-disclaimer">
         <HazardIcon size={15} />
         <span>
-          <strong>Friendly reminder.</strong> This demo can’t diagnose crop damage or replace an
-          on-site assessment by an agricultural expert.
+          This estimate does not diagnose damage or prove its cause. Confirm losses with an on-site
+          assessment.
         </span>
       </div>
     </div>
@@ -2099,11 +2000,10 @@ function EvidencePage({
         </div>
         <div>
           <span className="eyebrow">SCORING METHODOLOGY</span>
-          <h2>Clear Agronomic Principles</h2>
+          <h2>What the app can tell you</h2>
           <p>
-            This planning tool combines farm context, climate patterns, and crop rotation research.
-            Rainfall and temperature charts use historical weather observations to supply seasonal
-            rainfall context for planning.
+            NASA POWER supplies historical regional weather. Crop scores and loss estimates use demo
+            rules and entered assumptions. Neither proves crop suitability, damage, or future yield.
           </p>
         </div>
       </div>
@@ -2191,7 +2091,7 @@ function EvidencePage({
             <select
               aria-label="Choose rotation for evidence"
               className="compact-select"
-              value={selected}
+              value={current.id}
               onChange={(e) => setSelected(e.target.value)}
             >
               {rotations.map((item) => (
@@ -2209,11 +2109,7 @@ function EvidencePage({
               <strong>{current.total}</strong>
               <small> / 100</small>
             </span>
-            <span className="rank-pill">
-              {rotations.findIndex((r) => r.id === current.id) === 0
-                ? "HIGHEST SAMPLE SCORE"
-                : "ALTERNATIVE"}
-            </span>
+            <span className="rank-pill">DEMO SCORE</span>
           </div>
           <ScoreBreakdown scores={current.scores} showWeight />
           <div className="score-eq-lines">
@@ -2263,7 +2159,7 @@ function EvidencePage({
               icon: Thermometer,
               name: "NASA POWER Climate",
               label: "Climate & rainfall",
-              status: "CONNECTED",
+              status: "AVAILABLE",
               description:
                 "Recent 90-day and historical daily rainfall and temperature loaded automatically for selected Bukidnon farm coordinates.",
             },
@@ -2271,23 +2167,23 @@ function EvidencePage({
               icon: Layers,
               name: "ISRIC SoilGrids (250 m)",
               label: "Soil pH & texture",
-              status: "CONNECTED",
+              status: "AVAILABLE",
               description:
-                "Estimated topsoil pH, sand, silt, and clay percentages used for mineral/fertilizer screening and drainage flags.",
+                "Predicted soil pH and texture. These are not soil tests or fertilizer recommendations.",
             },
             {
               icon: Mountain,
               name: "Open-Meteo Elevation & Slope",
-              label: "Terrain suitability",
-              status: "CONNECTED",
+              label: "Terrain context",
+              status: "AVAILABLE",
               description:
-                "Elevation and calculated terrain slope % to flag erosion risk and areas unsuitable for intensive tillage.",
+                "Elevation samples and approximate terrain gradient. Field slope and drainage need local confirmation.",
             },
             {
               icon: Camera,
               name: "Mapillary / KartaView",
               label: "Street-level imagery",
-              status: "CONNECTED",
+              status: "AVAILABLE",
               description:
                 "Free street-level photos around pinned farm landmarks when public road coverage is available.",
             },
