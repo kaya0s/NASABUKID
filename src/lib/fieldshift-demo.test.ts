@@ -117,3 +117,45 @@ it("compares held-out predictions with a baseline and measures interval coverage
     evaluateYieldPilot([{ predicted: 1, observed: 1, baseline: 1, lower: 2 }]),
   ).toThrow();
 });
+
+import { buildRotationStrategies } from "./fieldshift-demo";
+it("compares farmer's current rotation with two alternatives including pests, trade-offs, and gaps", () => {
+  const strategies = buildRotationStrategies("Typical", {
+    ...farm,
+    crop: "Corn",
+    previous: "Corn",
+    slopePercent: 16,
+  });
+  expect(strategies).toHaveLength(3);
+  expect(strategies[0]!.isCurrentRotation).toBe(true);
+  expect(strategies[1]!.nextCrop).toBe("Mungbean");
+  expect(strategies[2]!.nextCrop).toBe("Fallow");
+  for (const strategy of strategies) {
+    expect(strategy.nextCropImage).toMatch(/^\/crops\/.*\.jpg$/);
+    expect(strategy.pros.length).toBeGreaterThan(0);
+    expect(strategy.cons.length).toBeGreaterThan(0);
+    expect(strategy.pestsAndDiseases.length).toBeGreaterThan(0);
+    expect(strategy.satelliteWhy.length).toBeGreaterThan(0);
+    expect(strategy.evidenceGaps.length).toBeGreaterThan(0);
+    expect(strategy.layFallowPeriod.length).toBeGreaterThan(0);
+  }
+});
+
+import { buildSoilAndAgronomyAdvisory } from "./fieldshift-demo";
+it("flags acidic soil, steep slope suitability, fertilizer stages, and pest climate", () => {
+  const advisory = buildSoilAndAgronomyAdvisory({
+    nextCrop: "Mungbean",
+    previousCrop: "Corn",
+    ph: 5.1,
+    soilTexture: "Sand 30% · Silt 30% · Clay 40%",
+    drainage: "Good",
+    irrigation: "Rainfed",
+    slopePercent: 20,
+    elevation: 640,
+  });
+  expect(advisory.suitability.status).toBe("Not suitable for intensive tillage");
+  expect(advisory.soilProfile.phStatus).toBe("Acidic");
+  expect(advisory.soilProfile.avoidFertilizers.some((item) => item.includes("Ammonium Sulfate"))).toBe(true);
+  expect(advisory.fertilizerStages.length).toBeGreaterThanOrEqual(2);
+  expect(advisory.climateTiming.bestPlantingWindow.length).toBeGreaterThan(0);
+});

@@ -17,6 +17,7 @@ import {
   BarChart3,
   Bot,
   CalendarDays,
+  Camera,
   Check,
   ChevronDown,
   ChevronRight,
@@ -30,6 +31,7 @@ import {
   Flower2,
   HeartHandshake,
   ImagePlus,
+  Layers,
   Leaf,
   Map,
   MapPin,
@@ -66,13 +68,21 @@ import { FarmMap } from "@/components/farm-map";
 import { FullFarmMap } from "@/components/full-farm-map";
 import { HistoricalWeatherPanel } from "@/components/historical-weather";
 import { OverviewWeatherWidget } from "@/components/overview-weather";
-import { coordinatesSchema, type Coordinates, type HistoricalWeather } from "@/lib/nasa-power";
 import {
+  coordinatesSchema,
+  fetchRecentNasaClimate,
+  monthlyWeather,
+  type Coordinates,
+  type HistoricalWeather,
+} from "@/lib/nasa-power";
+import {
+  buildRotationStrategies,
+  buildSoilAndAgronomyAdvisory,
   planningReviewFlags,
   calculateEstimatedLoss,
   type ClimateScenario,
+  type RotationStrategy,
   rotationsForScenario,
-  rotationsForFarm,
   SAMPLE_CORN_PRICE_PER_KG,
   SAMPLE_YIELD_KG_PER_HA,
 } from "@/lib/fieldshift-demo";
@@ -157,6 +167,17 @@ const NAV: Array<{
   },
 ];
 const SCENARIOS: ClimateScenario[] = ["Typical", "El Niño-like", "Wet"];
+const CROP_OPTIONS = [
+  "Pineapple",
+  "Banana",
+  "Sugar Cane",
+  "Corn",
+  "Rice",
+  "Mungbean",
+  "Sweet potato",
+  "Cassava",
+] as const;
+const PREVIOUS_CROP_OPTIONS = [...CROP_OPTIONS, "Fallow"] as const;
 const SUGGESTED_QUESTIONS = [
   "Why plant a legume after corn?",
   "What changes in a dry season?",
@@ -257,6 +278,8 @@ function FieldShift() {
   const [boundary, setBoundary] = useState<Coordinates[]>([]);
   const [eventWeather, setEventWeather] = useState<HistoricalWeather | null>(null);
   const [historical, setHistorical] = useState<HistoricalWeather | null>(null);
+  const [climateLoading, setClimateLoading] = useState(false);
+  const [terrain, setTerrain] = useState<{ elevation: number; slopePercent: number } | null>(null);
   const [price, setPrice] = useState(String(SAMPLE_CORN_PRICE_PER_KG));
   const [expectedYield, setExpectedYield] = useState(String(SAMPLE_YIELD_KG_PER_HA));
   const [scenario, setScenario] = useState<ClimateScenario>("Typical");
@@ -384,11 +407,15 @@ function FieldShift() {
       )
     : undefined;
 
-  const rotations = rotationsForFarm(scenario, {
+  const rotations = buildRotationStrategies(scenario, {
     ph: farm.ph.trim() ? Number(farm.ph) : NaN,
     drainage: farm.drainage,
     irrigation: farm.irrigation,
     planted: farm.planted,
+    crop: farm.crop,
+    previous: farm.previous,
+    slopePercent: terrain?.slopePercent ?? null,
+    soil: farm.soil,
     ...(monthlyRainfall ? { monthlyRainfall } : {}),
   });
   const activeRotation =
@@ -420,6 +447,9 @@ function FieldShift() {
   }
 
   function applyContext(fields: ContextFields) {
+    if (fields.elevation !== undefined && fields.slopePercent !== undefined) {
+      setTerrain({ elevation: fields.elevation, slopePercent: fields.slopePercent });
+    }
     setFarm((current) => ({
       ...current,
       ...((!current.place || current.place === "Location not identified") && fields.place
@@ -430,6 +460,32 @@ function FieldShift() {
       ...(fields.drainage ? { drainage: fields.drainage } : {}),
     }));
   }
+
+  useEffect(() => {
+    if (page !== "fullmap" || !locationConfirmed) return;
+    if (
+      historical &&
+      Math.abs(historical.latitude - location.latitude) < 0.001 &&
+      Math.abs(historical.longitude - location.longitude) < 0.001
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    setClimateLoading(true);
+    fetchRecentNasaClimate(location, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setHistorical(data);
+          setClimateLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setClimateLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [page, locationConfirmed, location.latitude, location.longitude]);
 
   function updateFarm(key: keyof Farm, value: string) {
     setProfileEdited(true);
@@ -508,6 +564,53 @@ function FieldShift() {
                     : "historical-planning-context-not-event-evidence",
               }
             : null,
+          terrain: terrain
+            ? {
+                elevation: terrain.elevation,
+                slopePercent: terrain.slopePercent,
+              }
+            : undefined,
+          rotationDetails: {
+            strategyLabel: activeRotation.strategyLabel.slice(0, 280),
+            nextCrop: activeRotation.nextCrop.slice(0, 280),
+            layFallowPeriod: activeRotation.layFallowPeriod.slice(0, 280),
+            pros: activeRotation.pros.slice(0, 6).map((item) => item.slice(0, 280)),
+            cons: activeRotation.cons.slice(0, 6).map((item) => item.slice(0, 280)),
+            satelliteWhy: activeRotation.satelliteWhy.slice(0, 10).map((item) => item.slice(0, 280)),
+            evidenceGaps: activeRotation.evidenceGaps.slice(0, 10).map((item) => item.slice(0, 280)),
+          },
+          agronomyAdvisory: (() => {
+            const monthly = historical ? monthlyWeather(historical.days) : null;
+            const adv = buildSoilAndAgronomyAdvisory({
+              nextCrop: activeRotation.nextCrop,
+              previousCrop: farm.previous,
+              ph: farm.ph.trim() && Number.isFinite(Number(farm.ph)) ? Number(farm.ph) : null,
+              soilTexture: farm.soil,
+              drainage: farm.drainage,
+              irrigation: farm.irrigation,
+              slopePercent: terrain?.slopePercent ?? null,
+              elevation: terrain?.elevation ?? null,
+              ...(monthly
+                ? {
+                    monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
+                    monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
+                  }
+                : {}),
+            });
+            return {
+              suitabilityStatus: adv.suitability.status.slice(0, 280),
+              phLabel: adv.soilProfile.phLabel.slice(0, 280),
+              mineralsNeeded: adv.soilProfile.mineralsNeeded.slice(0, 6).map((item) => item.slice(0, 280)),
+              recommendedFertilizers: adv.soilProfile.recommendedFertilizers
+                .slice(0, 6)
+                .map((item) => item.slice(0, 280)),
+              avoidFertilizers: adv.soilProfile.avoidFertilizers
+                .slice(0, 6)
+                .map((item) => item.slice(0, 280)),
+              bestPlantingWindow: adv.climateTiming.bestPlantingWindow.slice(0, 280),
+              prominentPestClimate: adv.climateTiming.prominentPestClimate.slice(0, 280),
+            };
+          })(),
         },
       };
       const response = await fetch("/api/advisor", {
@@ -631,6 +734,11 @@ function FieldShift() {
             farm={farm}
             onUpdateFarm={updateFarm}
             onContinue={() => goTo("prevention")}
+            historical={historical}
+            climateLoading={climateLoading}
+            terrain={terrain}
+            cropOptions={CROP_OPTIONS}
+            previousCropOptions={PREVIOUS_CROP_OPTIONS}
           />
         ) : (
         <div className="page-wrap">
@@ -689,13 +797,6 @@ function FieldShift() {
               onContinue={() => goTo("prevention")}
             />
           )}
-          <div hidden={page !== "farm"}>
-            <FarmPublicData
-              location={location}
-              confirmed={locationConfirmed}
-              onApply={applyContext}
-            />
-          </div>
           {page === "prevention" && (
             <>
               <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
@@ -725,6 +826,10 @@ function FieldShift() {
               </section>
               <PreventionPage
                 farm={farm}
+                setFarm={setFarm}
+                cropOptions={CROP_OPTIONS}
+                previousCropOptions={PREVIOUS_CROP_OPTIONS}
+                terrain={terrain}
                 historical={historical}
                 scenario={scenario}
                 setScenario={(next) => {
@@ -1190,7 +1295,7 @@ function FarmPage({
               value={farm.crop}
               onChange={(e) => onUpdate("crop", e.target.value)}
             >
-              {["Corn", "Mungbean", "Sorghum", "Sweet potato", "Rice", "Cassava"].map((crop) => (
+              {CROP_OPTIONS.map((crop) => (
                 <option key={crop}>{crop}</option>
               ))}
             </select>
@@ -1203,11 +1308,9 @@ function FarmPage({
               value={farm.previous}
               onChange={(e) => onUpdate("previous", e.target.value)}
             >
-              {["Mungbean", "Corn", "Sorghum", "Sweet potato", "Rice", "Cassava", "Fallow"].map(
-                (crop) => (
-                  <option key={crop}>{crop}</option>
-                ),
-              )}
+              {PREVIOUS_CROP_OPTIONS.map((crop) => (
+                <option key={crop}>{crop}</option>
+              ))}
             </select>
           </div>
           <div className="form-field">
@@ -1302,6 +1405,10 @@ function FarmPage({
 
 function PreventionPage({
   farm,
+  setFarm,
+  cropOptions,
+  previousCropOptions,
+  terrain,
   historical,
   scenario,
   setScenario,
@@ -1313,18 +1420,87 @@ function PreventionPage({
   onEvidencePage,
 }: {
   farm: Farm;
+  setFarm: React.Dispatch<React.SetStateAction<Farm>>;
+  cropOptions: readonly string[];
+  previousCropOptions: readonly string[];
+  terrain: { elevation: number | null; slopePercent: number | null } | null;
   historical: HistoricalWeather | null;
   scenario: ClimateScenario;
   setScenario: (scenario: ClimateScenario) => void;
-  rotations: ReturnType<typeof rotationsForScenario>;
+  rotations: RotationStrategy[];
   selected: string;
   setSelected: (id: string) => void;
   onEvidence: (id: string) => void;
   onChat: () => void;
   onEvidencePage: () => void;
 }) {
+  const activeStrategy = rotations.find((item) => item.id === selected) ?? rotations[0]!;
+  const monthly = historical ? monthlyWeather(historical.days) : null;
+  const advisory = buildSoilAndAgronomyAdvisory({
+    nextCrop: activeStrategy.nextCrop,
+    previousCrop: farm.previous,
+    ph: farm.ph.trim() && Number.isFinite(Number(farm.ph)) ? Number(farm.ph) : null,
+    soilTexture: farm.soil,
+    drainage: farm.drainage,
+    irrigation: farm.irrigation,
+    slopePercent: terrain?.slopePercent ?? null,
+    elevation: terrain?.elevation ?? null,
+    ...(monthly
+      ? {
+          monthlyRainfall: monthly.map((m) => m.rainfall ?? 0),
+          monthlyTemperature: monthly.map((m) => m.temperature ?? 25),
+        }
+      : {}),
+  });
+
   return (
     <>
+      <section className="panel crop-history-bar">
+        <div className="crop-history-copy">
+          <span className="eyebrow">CROP HISTORY &amp; NEXT-CROP PREDICTOR</span>
+          <h3>Compare your current rotation against two alternatives</h3>
+          <p>
+            Adjust your previous and current crop below. Predictions combine NASA POWER rainfall,
+            SoilGrids pH, and terrain slope with transparent trade-offs and information gaps.
+          </p>
+        </div>
+        <div className="crop-history-fields">
+          <label>
+            Previous crop
+            <select
+              value={farm.previous}
+              onChange={(e) => setFarm((current) => ({ ...current, previous: e.target.value }))}
+            >
+              {previousCropOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Current crop
+            <select
+              value={farm.crop}
+              onChange={(e) => setFarm((current) => ({ ...current, crop: e.target.value }))}
+            >
+              {cropOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Planned next planting
+            <input
+              type="date"
+              value={farm.planted}
+              onChange={(e) => setFarm((current) => ({ ...current, planted: e.target.value }))}
+            />
+          </label>
+        </div>
+      </section>
       <div className="scenario-toolbar">
         <div className="scenario-copy">
           <span className="scenario-indicator">
@@ -1388,7 +1564,7 @@ function PreventionPage({
             >
               <div className="rotation-card-top">
                 <span className="rotation-rank">
-                  <span>{String(index + 1).padStart(2, "0")}</span> SAMPLE PICK
+                  <span>{String(index + 1).padStart(2, "0")}</span> {rotation.strategyLabel}
                 </span>
                 <button
                   className={`rotation-select ${selected === rotation.id ? "rotation-select-on" : ""}`}
@@ -1397,6 +1573,15 @@ function PreventionPage({
                 >
                   {selected === rotation.id ? <Check size={14} /> : <span />}
                 </button>
+              </div>
+              <div className="rotation-crop-media">
+                <img
+                  src={rotation.nextCropImage}
+                  alt={`${rotation.nextCrop} crop`}
+                  className="rotation-crop-img"
+                  loading="lazy"
+                />
+                <span className="rotation-next-badge">Next crop: {rotation.nextCrop}</span>
               </div>
               <h3>{rotation.name}</h3>
               <p className="rotation-note">{rotation.note}</p>
@@ -1407,10 +1592,70 @@ function PreventionPage({
                 </span>
                 <ScoreRing score={rotation.total} />
                 <div className="rotation-rank-caption">
-                  {index === 0 ? "HIGHEST SAMPLE SCORE" : "ALTERNATIVE ROTATION"}
+                  {rotation.isCurrentRotation
+                    ? "CURRENT BASELINE"
+                    : index === 0
+                      ? "HIGHEST SAMPLE SCORE"
+                      : "ALTERNATIVE ROTATION"}
                 </div>
               </div>
               <ScoreBreakdown scores={rotation.scores} />
+              <div className="rotation-tradeoffs">
+                <div className="tradeoff-col tradeoff-pros">
+                  <strong>Pros</strong>
+                  <ul>
+                    {rotation.pros.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="tradeoff-col tradeoff-cons">
+                  <strong>Cons &amp; risks</strong>
+                  <ul>
+                    {rotation.cons.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div className="rotation-fallow-note">
+                <strong>Lay fallow / rest period:</strong> {rotation.layFallowPeriod}
+              </div>
+              <details className="rotation-pests">
+                <summary>
+                  Possible pests &amp; diseases ({rotation.pestsAndDiseases.length})
+                </summary>
+                <div className="pest-list">
+                  {rotation.pestsAndDiseases.map((pest) => (
+                    <div key={pest.name} className="pest-item">
+                      <strong>{pest.name}</strong>
+                      <span>
+                        <b>Risk window:</b> {pest.riskWindow}
+                      </span>
+                      <span>
+                        <b>Mitigation:</b> {pest.mitigation}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+              <details className="rotation-why-gaps">
+                <summary>Why this rotation (satellite evidence &amp; gaps)</summary>
+                <div className="why-gaps-body">
+                  <strong>Satellite &amp; field signals</strong>
+                  <ul>
+                    {rotation.satelliteWhy.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                  <strong>Information gaps &amp; local review</strong>
+                  <ul>
+                    {rotation.evidenceGaps.map((gap) => (
+                      <li key={gap}>{gap}</li>
+                    ))}
+                  </ul>
+                </div>
+              </details>
               <RotationResearch rotationId={rotation.id} drainage={farm.drainage} />
               <RotationEvidence rotation={rotation} farm={farm} historical={historical} />
               <div className="rotation-actions">
@@ -1431,6 +1676,87 @@ function PreventionPage({
             25%, climate resilience 15%. The displayed total is calculated from these weights and
             scenario-adjusted demo scores.
           </span>
+        </div>
+      </section>
+      <section className="panel agronomy-advisory-panel">
+        <div className="section-title-row">
+          <div>
+            <span className="eyebrow">SOIL, FERTILIZER TIMING &amp; SUITABILITY</span>
+            <h2>Field &amp; crop guidance for {activeStrategy.nextCrop}</h2>
+            <p>
+              Illustrative screening based on SoilGrids pH, terrain slope, and NASA POWER rainfall
+              patterns. Confirm with a local soil test and agricultural technician.
+            </p>
+          </div>
+          <span
+            className={`suitability-pill suitability-${advisory.suitability.status.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+          >
+            {advisory.suitability.status}
+          </span>
+        </div>
+
+        <div className="advisory-grid">
+          <div className="advisory-card">
+            <h3>Planting suitability &amp; terrain</h3>
+            <p className="advisory-summary">{advisory.suitability.summary}</p>
+            <ul>
+              {advisory.suitability.flags.map((flag) => (
+                <li key={flag}>{flag}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="advisory-card">
+            <h3>Soil pH &amp; mineral needs</h3>
+            <p className="advisory-summary">
+              <strong>{advisory.soilProfile.phLabel}</strong>
+            </p>
+            <strong>Minerals likely needed</strong>
+            <ul>
+              {advisory.soilProfile.mineralsNeeded.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <strong className="advisory-subhead">Recommended fertilizers</strong>
+            <ul>
+              {advisory.soilProfile.recommendedFertilizers.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <strong className="advisory-subhead">Avoid / use with caution</strong>
+            <ul>
+              {advisory.soilProfile.avoidFertilizers.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="advisory-card">
+            <h3>Fertilizer timing by growth stage</h3>
+            <div className="fertilizer-stages">
+              {advisory.fertilizerStages.map((step) => (
+                <div key={step.stage} className="fertilizer-stage-item">
+                  <div className="stage-header">
+                    <strong>{step.stage}</strong>
+                    <span>{step.timing}</span>
+                  </div>
+                  <p>{step.guidance}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="advisory-card">
+            <h3>Planting window &amp; pest climate</h3>
+            <div className="climate-timing-block">
+              <strong>Best time to plant</strong>
+              <p>{advisory.climateTiming.bestPlantingWindow}</p>
+            </div>
+            <div className="climate-timing-block">
+              <strong>When pests &amp; diseases peak</strong>
+              <p>{advisory.climateTiming.prominentPestClimate}</p>
+            </div>
+          </div>
         </div>
       </section>
     </>
@@ -1935,15 +2261,41 @@ function EvidencePage({
           {[
             {
               icon: Thermometer,
-              name: "Satellite Weather Records",
-              label: "Climate context",
+              name: "NASA POWER Climate",
+              label: "Climate & rainfall",
+              status: "CONNECTED",
               description:
-                "Historical rainfall and temperature can be loaded by farm coordinates and date in crop planning and recovery.",
+                "Recent 90-day and historical daily rainfall and temperature loaded automatically for selected Bukidnon farm coordinates.",
+            },
+            {
+              icon: Layers,
+              name: "ISRIC SoilGrids (250 m)",
+              label: "Soil pH & texture",
+              status: "CONNECTED",
+              description:
+                "Estimated topsoil pH, sand, silt, and clay percentages used for mineral/fertilizer screening and drainage flags.",
+            },
+            {
+              icon: Mountain,
+              name: "Open-Meteo Elevation & Slope",
+              label: "Terrain suitability",
+              status: "CONNECTED",
+              description:
+                "Elevation and calculated terrain slope % to flag erosion risk and areas unsuitable for intensive tillage.",
+            },
+            {
+              icon: Camera,
+              name: "Mapillary / KartaView",
+              label: "Street-level imagery",
+              status: "CONNECTED",
+              description:
+                "Free street-level photos around pinned farm landmarks when public road coverage is available.",
             },
             {
               icon: Activity,
               name: "NOAA ENSO",
-              label: "Potential climate signal",
+              label: "Seasonal climate signal",
+              status: "PLANNED",
               description:
                 "ENSO status could provide context for seasonal discussions—not a farm-specific weather forecast.",
             },
@@ -1951,10 +2303,11 @@ function EvidencePage({
               icon: Leaf,
               name: "Crop guides",
               label: "Agronomy & rotation",
+              status: "REFERENCE",
               description:
                 "Philippine crop guides and local extension recommendations should inform real planting decisions.",
             },
-          ].map(({ icon: Icon, name, label, description }) => (
+          ].map(({ icon: Icon, name, label, status, description }) => (
             <div className="source-item" key={name}>
               <span className="source-icon">
                 <Icon size={17} />
@@ -1964,9 +2317,7 @@ function EvidencePage({
                 <strong>{name}</strong>
                 <span>{description}</span>
               </span>
-              <span className="source-status">
-                {name === "Satellite Weather Records" ? "CONNECTED" : "PLANNED"}
-              </span>
+              <span className="source-status">{status}</span>
             </div>
           ))}
         </div>

@@ -42,4 +42,35 @@ describe("advisor contract", () => {
     expect(RECOVERY_STEPS.Drought.join(" ")).not.toContain("receded");
     expect(messages[0]!.content).toContain("untrusted data");
   });
+  it("accepts optional terrain, rotationDetails, and agronomyAdvisory context", () => {
+    const input = advisorRequestSchema.parse({
+      ...fixture,
+      context: {
+        ...fixture.context,
+        terrain: { elevation: 620, slopePercent: 6.5 },
+        rotationDetails: {
+          strategyLabel: "ALTERNATIVE 1 · NITROGEN & PEST BREAK",
+          nextCrop: "Mungbean",
+          layFallowPeriod: "Rest 1–2 weeks.",
+          pros: ["Fixes nitrogen"],
+          cons: ["Lower gross revenue"],
+          satelliteWhy: ["SoilGrids pH 6.2"],
+          evidenceGaps: ["Confirm local seed supply"],
+        },
+        agronomyAdvisory: {
+          suitabilityStatus: "Suitable",
+          phLabel: "pH 6.2 (Balanced)",
+          mineralsNeeded: ["Nitrogen & Potassium"],
+          recommendedFertilizers: ["Rhizobium inoculant"],
+          avoidFertilizers: ["High N rates"],
+          bestPlantingWindow: "May–June",
+          prominentPestClimate: "Warm dry-to-wet transition",
+        },
+      },
+    });
+    const payload = JSON.parse(buildAdvisorMessages(input).at(-1)!.content);
+    expect(payload.context.terrain.slopePercent).toBe(6.5);
+    expect(payload.context.rotationDetails.nextCrop).toBe("Mungbean");
+    expect(payload.context.agronomyAdvisory.suitabilityStatus).toBe("Suitable");
+  });
 });
