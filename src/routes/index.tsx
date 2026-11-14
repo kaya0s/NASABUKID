@@ -47,12 +47,13 @@ type Page = "overview" | "farm" | "prevention" | "recovery" | "evidence" | "chat
 type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
 type Farm = { place: string; area: string; crop: string; previous: string; ph: string; soil: string; irrigation: string; drainage: string; planted: string };
 type ChatMessage = { role: "assistant" | "user"; text: string };
-const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; isCenter?: boolean }> = [
-  { id: "overview", label: "Overview", icon: Compass },
-  { id: "farm", label: "My farm", icon: Sprout },
-  { id: "prevention", label: "Crop planning", icon: Plus, isCenter: true },
-  { id: "recovery", label: "Damage recovery", icon: HeartHandshake },
-  { id: "chat", label: "Field advisor", icon: MessageCircle },
+const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; section: string; isCenter?: boolean }> = [
+  { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
+  { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
+  { id: "prevention", label: "Crop planning", icon: Plus, section: "WORKSPACE", isCenter: true },
+  { id: "recovery", label: "Damage recovery", icon: HeartHandshake, section: "WORKSPACE" },
+  { id: "evidence", label: "Evidence & sources", icon: FileText, section: "INSIGHTS" },
+  { id: "chat", label: "Field advisor", icon: MessageCircle, section: "INSIGHTS" },
 ];
 const SCENARIOS: ClimateScenario[] = ["Typical", "El Niño-like", "Wet"];
 const SUGGESTED_QUESTIONS = ["Why plant a legume after corn?", "What changes in a dry season?", "How was my loss estimate calculated?"];
@@ -72,7 +73,21 @@ const HAZARD_RATES: Record<Hazard, { affected: number; yieldLoss: number; observ
 };
 const PHP = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(max-width: 780px)");
+    const onChange = () => setIsMobile(mql.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isMobile;
+}
+
 function FieldShift() {
+  const isMobile = useIsMobile();
   const [page, setPage] = useState<Page>("overview");
   const [farm, setFarm] = useState<Farm>(SEED_FARM);
   const [stored, setStored] = useState(false);
@@ -207,6 +222,49 @@ function FieldShift() {
 
   return (
     <div className="app-shell">
+      <aside className="sidebar" aria-hidden={isMobile ? "true" : undefined}>
+        <div className="brand">
+          <div className="brand-mark"><Sprout size={21} strokeWidth={1.8} /></div>
+          <div>
+            <span className="brand-name">fieldshift<span className="brand-ai">ai</span></span>
+            <span className="brand-caption">GROW WITH CONFIDENCE</span>
+          </div>
+        </div>
+        <div className="workspace-label">YOUR FIELD DESK <ChevronDown size={14} /></div>
+        <div className="sidebar-location">
+          <MapPin size={15} />
+          <div><strong>{farm.place}</strong><span>Selected farm reference</span></div>
+          <span className="location-dot" />
+        </div>
+        <nav className="main-nav" aria-label="Main navigation">
+          {NAV.map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.id}>
+                {(index === 0 || NAV[index - 1]?.section !== item.section) && (
+                  <span className="nav-section">{item.section}</span>
+                )}
+                <button
+                  className={`nav-item ${page === item.id ? "nav-item-active" : ""}`}
+                  onClick={() => goTo(item.id)}
+                >
+                  <Icon size={17} strokeWidth={1.8} />
+                  <span>{item.label}</span>
+                  {item.id === "recovery" && <span className="nav-live-dot" />}
+                </button>
+              </div>
+            );
+          })}
+        </nav>
+        <div className="sidebar-foot">
+          <div className="guide-avatar"><Mountain size={17} /></div>
+          <div><span>BUKIDNON FIELD GUIDE</span><strong>Farmer-first, season-ready.</strong></div>
+          <button className="sidebar-help" title="Get friendly, sample-based planning guidance" aria-label="Get field guidance" onClick={() => goTo("chat")}>
+            <CircleHelp size={17} />
+          </button>
+        </div>
+      </aside>
+
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
@@ -228,7 +286,7 @@ function FieldShift() {
               <h1>{pageTitle[page]}</h1>
               {page !== "overview" && (
                 <p className="intro-copy">
-                  {page === "farm" ? "Set your location, boundary, and field details for customized recommendations." : page === "prevention" ? "Explore NASA weather and compare crop rotations." : page === "recovery" ? "Estimate potential crop loss and planning next steps." : page === "evidence" ? "Methodology and data sources behind rotation scores." : page === "chat" ? "Ask questions about your sample field plan." : ""}
+                  {page === "farm" ? "Set your location, boundary, and field details for customized recommendations." : page === "prevention" ? "Compare climate-ready crop rotation plans for your field." : page === "recovery" ? "Estimate potential crop loss and planning next steps." : page === "evidence" ? "Methodology and data sources behind rotation scores." : page === "chat" ? "Ask questions about your sample field plan." : ""}
                 </p>
               )}
             </div>
@@ -267,8 +325,8 @@ function FieldShift() {
           </footer>
         </div>
 
-        <nav className="bottom-nav-dock" aria-label="Main navigation">
-          {NAV.map((item) => {
+        <nav className="bottom-nav-dock" aria-label="Mobile navigation" aria-hidden={!isMobile ? "true" : undefined}>
+          {NAV.filter((item) => item.id !== "evidence").map((item) => {
             const Icon = item.icon;
             const isActive = page === item.id;
             if (item.isCenter) {
