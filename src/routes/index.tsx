@@ -1526,37 +1526,65 @@ function OverviewPage({
 
         <div className="agri-cards-scroller">
           <button type="button" className="agri-field-card" onClick={onPrevention}>
-            <span className="agri-card-media">
-              <img src={bukidnonFields} alt="" />
-            </span>
-            <span className="agri-card-info">
-              <span className="agri-card-kicker">CROP PLANNING · {scenario}</span>
-              <strong className="agri-card-title">Compare next-season rotations</strong>
-              <span className="agri-card-copy">
+            <div className="agri-card-media">
+              <img src={bukidnonFields} alt="Bukidnon crop planning field" />
+              <span className="agri-bookmark-btn" aria-hidden="true">
+                <Wheat size={16} />
+              </span>
+            </div>
+            <div className="agri-card-info">
+              <div className="agri-card-header-row">
+                <div className="agri-card-tags">
+                  <span className="agri-tag">
+                    <Sprout size={12} aria-hidden="true" /> Crop Planning
+                  </span>
+                  <span className="agri-scenario-chip">{scenario}</span>
+                </div>
+              </div>
+              <h3 className="agri-card-title">Compare next-season rotations</h3>
+              <p className="agri-card-copy">
                 Five demo rotations scored on water, soil, income, and resilience.
-              </span>
-              <span className="agri-card-foot">
-                <span>{rotationName ? `Last viewed · ${rotationName}` : "Open crop planning"}</span>
-                <ArrowRight size={16} aria-hidden="true" />
-              </span>
-            </span>
+              </p>
+              <div className="agri-card-foot">
+                <span className="agri-card-status">
+                  {rotationName ? `Last viewed · ${rotationName}` : "Open crop planning"}
+                </span>
+                <span className="agri-action-pill">
+                  <span>Explore</span>
+                  <ArrowRight size={13} aria-hidden="true" />
+                </span>
+              </div>
+            </div>
           </button>
 
           <button type="button" className="agri-field-card" onClick={onRecover}>
-            <span className="agri-card-media">
-              <img src={floodCorn} alt="" />
-            </span>
-            <span className="agri-card-info">
-              <span className="agri-card-kicker">DAMAGE RECOVERY · {hazard}</span>
-              <strong className="agri-card-title">Estimate storm damage</strong>
-              <span className="agri-card-copy">
+            <div className="agri-card-media">
+              <img src={floodCorn} alt="Bukidnon flood recovery field" />
+              <span className="agri-bookmark-btn" aria-hidden="true">
+                <HeartHandshake size={16} />
+              </span>
+            </div>
+            <div className="agri-card-info">
+              <div className="agri-card-header-row">
+                <div className="agri-card-tags">
+                  <span className="agri-tag tag-coral">
+                    <HeartHandshake size={12} aria-hidden="true" /> Damage Recovery
+                  </span>
+                  <span className="agri-scenario-chip chip-coral">{hazard}</span>
+                </div>
+              </div>
+              <h3 className="agri-card-title">Estimate storm damage</h3>
+              <p className="agri-card-copy">
                 Work out crop loss from rainfall and field reports, then plan the next step.
-              </span>
-              <span className="agri-card-foot">
-                <span>Open damage check</span>
-                <ArrowRight size={16} aria-hidden="true" />
-              </span>
-            </span>
+              </p>
+              <div className="agri-card-foot">
+                <span className="agri-card-status">Open damage check</span>
+                <span className="agri-action-pill pill-coral">
+                  <span>Assess</span>
+                  <ArrowRight size={13} aria-hidden="true" />
+                </span>
+              </div>
+            </div>
           </button>
         </div>
       </section>
