@@ -1,0 +1,3 @@
+- [ ] Build the FieldShift AI dashboard and complete planning and recovery journeys.
+- [ ] Test score and financial-loss calculations and verify app rendering.
+- [ ] Review the finished roadmap and confirm demo-only limitations are explicit.
