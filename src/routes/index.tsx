@@ -266,17 +266,6 @@ function FieldShift() {
       </aside>
 
       <main className="main-area">
-        <header className="topbar">
-          <div className="topbar-left">
-            <span className="crumb">FIELD DESK</span>
-            <ChevronRight size={14} className="crumb-divider" />
-            <span className="crumb-current">{NAV.find((item) => item.id === page)?.label ?? pageTitle[page] ?? "Overview"}</span>
-          </div>
-          <div className="topbar-right">
-            <span className="demo-label"><span className="demo-dot" /> DEMO SCORES</span>
-            <span className="user-chip"><span className="user-avatar">B</span><span className="user-name">Bukidnon grower</span></span>
-          </div>
-        </header>
         <div className="page-wrap">
           <div className="page-intro">
             <div>
