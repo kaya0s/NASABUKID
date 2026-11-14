@@ -148,15 +148,7 @@ const NAV: Array<{
   isCenter?: boolean;
 }> = [
   { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
-  { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
   { id: "fullmap", label: "Full Map (New)", icon: MapIcon, section: "WORKSPACE" },
-  {
-    id: "prevention",
-    label: "Crop planning",
-    icon: Wheat,
-    section: "WORKSPACE",
-    isCenter: true,
-  },
   {
     id: "recovery",
     label: "Damage recovery",
@@ -1139,44 +1131,6 @@ function LandingPage({
               <span className="brand-nasa">NASA</span><span className="brand-bukid">BUKID</span>
             </span>
           </div>
-
-          <nav className="landing-nav-links" aria-label="Landing navigation">
-            <button
-              type="button"
-              className="landing-nav-link"
-              onClick={() => onNavigate("farm")}
-            >
-              My farm
-            </button>
-            <button
-              type="button"
-              className="landing-nav-link"
-              onClick={() => onNavigate("prevention")}
-            >
-              Crop planning
-            </button>
-            <button
-              type="button"
-              className="landing-nav-link"
-              onClick={() => onNavigate("recovery")}
-            >
-              Damage recovery
-            </button>
-            <button
-              type="button"
-              className="landing-nav-link"
-              onClick={() => onNavigate("chat")}
-            >
-              Field advisor
-            </button>
-          </nav>
-
-          <div className="landing-header-actions">
-            <Button className="landing-launch-btn" onClick={onLaunch}>
-              <span>Launch Field Desk</span>
-              <ArrowRight size={15} />
-            </Button>
-          </div>
         </div>
       </header>
 
@@ -1189,104 +1143,23 @@ function LandingPage({
           <div className="landing-badge">
             <span className="landing-badge-dot" />
             <Sparkles size={13} />
-            <span>NASA Space Apps Challenge 2026 · Bukidnon Agriculture</span>
+            <span>Bukidnon Agriculture · Climate-Ready Farm Guide</span>
           </div>
 
           <h1 className="landing-hero-title">
-            Space Data for Grounded Farming.
+            Smart crop planning for Bukidnon farmers.
           </h1>
 
           <p className="landing-hero-subtitle">
-            Harness NASA satellite earth observations, 30+ years of solar and precipitation records,
-            and climate-ready crop rotation intelligence to safeguard Bukidnon yields through droughts,
-            floods, and changing seasons.
+            Plan what to plant next, check your local rainfall and soil, and protect your harvest
+            from dry spells and heavy rains using satellite weather and proven crop rotations.
           </p>
 
           <div className="landing-hero-ctas">
             <Button size="lg" className="landing-cta-primary" onClick={onLaunch}>
-              <span>Explore Field Desk</span>
-              <ArrowRight size={17} />
+              <span>Open Field Desk</span>
+              <ArrowRight size={19} />
             </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="landing-cta-secondary"
-              onClick={() => onNavigate("prevention")}
-            >
-              <Wheat size={17} />
-              <span>Plan Crop Rotations</span>
-            </Button>
-            <Button
-              size="lg"
-              variant="ghost"
-              className="landing-cta-ghost"
-              onClick={() => onNavigate("chat")}
-            >
-              <MessageCircle size={17} />
-              <span>Ask Field Advisor</span>
-            </Button>
-          </div>
-
-          {/* Social Proof / Key Highlights */}
-          <div className="landing-hero-metrics">
-            <div className="landing-metric-card">
-              <strong>30+ Years</strong>
-              <span>NASA POWER Satellite Records</span>
-            </div>
-            <div className="landing-metric-card">
-              <strong>4 Scenarios</strong>
-              <span>El Niño, Heavy Rain & Typical</span>
-            </div>
-            <div className="landing-metric-card">
-              <strong>Bukidnon-First</strong>
-              <span>Calibrated Upland Soil & Crops</span>
-            </div>
-            <div className="landing-metric-card">
-              <strong>AI Guided</strong>
-              <span>Season-Ready Agronomic Advice</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Hero Interactive Preview Card */}
-        <div className="landing-hero-preview">
-          <div className="hero-preview-window">
-            <div className="hero-preview-topbar">
-              <span className="window-dot red" />
-              <span className="window-dot yellow" />
-              <span className="window-dot green" />
-              <span className="window-title">NASABUKID Active Intelligence · Bukidnon, Philippines</span>
-            </div>
-            <div className="hero-preview-body">
-              <div className="hero-preview-weather-card">
-                <div className="preview-weather-head">
-                  <div>
-                    <span className="preview-location"><MapPin size={12} /> Bukidnon, Philippines</span>
-                    <strong className="preview-temp">26°C</strong>
-                  </div>
-                  <CloudSun size={36} className="preview-weather-icon" />
-                </div>
-                <div className="preview-weather-stats">
-                  <div><small>HUMIDITY</small><strong>86%</strong></div>
-                  <div><small>PRECIPITATION</small><strong>0 mm</strong></div>
-                  <div><small>WIND</small><strong>3 km/h</strong></div>
-                </div>
-              </div>
-
-              <div className="hero-preview-rotation-card">
-                <div className="preview-rotation-badge">
-                  <Sparkles size={12} /> RECOMMENDED ROTATION
-                </div>
-                <h3>Corn → Mungbean → Sorghum</h3>
-                <p>Nitrogen-fixing legume breaks pest cycles while drought-hardy sorghum secures food security in late season.</p>
-                <div className="preview-rotation-footer">
-                  <span className="preview-score-pill">Demo Score: 88 / 100</span>
-                  <button type="button" className="preview-link-btn" onClick={() => onNavigate("prevention")}>
-                    Inspect Model <ArrowRight size={13} />
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -1294,9 +1167,9 @@ function LandingPage({
       {/* Core Features Bento Grid */}
       <section className="landing-features-section">
         <div className="landing-section-head">
-          <span className="section-eyebrow">BUILT FOR BUKIDNON GROWERS</span>
-          <h2>Intelligent tools for resilient agriculture</h2>
-          <p>Designed around real field challenges—from unpredictable typhoons to severe dry spells.</p>
+          <span className="section-eyebrow">PRACTICAL FARM TOOLS</span>
+          <h2>Simple guides made for your field</h2>
+          <p>Easy-to-use tools to help you decide what to plant, check damage, and safeguard your farm income.</p>
         </div>
 
         <div className="landing-features-grid">
@@ -1304,11 +1177,11 @@ function LandingPage({
             <div className="feature-card-icon map-icon">
               <MapIcon size={24} />
             </div>
-            <span className="feature-category">SATELLITE & BOUNDARIES</span>
-            <h3>Interactive Farm Mapping</h3>
-            <p>Pinpoint your coordinates in Bukidnon or draw your precise field polygon to calculate area and query local satellite history.</p>
+            <span className="feature-category">MY FARM</span>
+            <h3>Field Profile & Soil</h3>
+            <p>Select your municipality in Bukidnon to see your soil texture, pH estimate, and historical rainfall patterns.</p>
             <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("farm")}>
-              <span>Set Farm Boundary</span>
+              <span>Open My Farm</span>
               <ChevronRight size={15} />
             </Button>
           </div>
@@ -1317,11 +1190,11 @@ function LandingPage({
             <div className="feature-card-icon crop-icon">
               <Wheat size={24} />
             </div>
-            <span className="feature-category">CLIMATE ADAPTATION</span>
-            <h3>Climate-Ready Rotations</h3>
-            <p>Compare diversified 3-crop sequences evaluated across El Niño droughts and heavy rainfall patterns to protect soil organic matter.</p>
+            <span className="feature-category">CROP ROTATION</span>
+            <h3>What to Plant Next</h3>
+            <p>Compare proven 3-crop sequences scored for soil health, water demand, and resilience through dry or wet seasons.</p>
             <Button className="feature-card-btn primary" onClick={() => onNavigate("prevention")}>
-              <span>Compare Rotations</span>
+              <span>Plan Rotations</span>
               <ChevronRight size={15} />
             </Button>
           </div>
@@ -1330,11 +1203,11 @@ function LandingPage({
             <div className="feature-card-icon recovery-icon">
               <HeartHandshake size={24} />
             </div>
-            <span className="feature-category">POST-HAZARD RESPONSE</span>
-            <h3>Rapid Loss & Replanting</h3>
-            <p>Assess crop loss after floods or typhoons with transparent gross revenue calculations, replanting timelines, and salvage guidance.</p>
+            <span className="feature-category">DAMAGE RECOVERY</span>
+            <h3>Storm & Flood Check</h3>
+            <p>Estimate harvest revenue at risk after floods or storms and find quick-growing replanting options to recover faster.</p>
             <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("recovery")}>
-              <span>Calculate Loss</span>
+              <span>Check Damage</span>
               <ChevronRight size={15} />
             </Button>
           </div>
@@ -1343,11 +1216,11 @@ function LandingPage({
             <div className="feature-card-icon advisor-icon">
               <MessageCircle size={24} />
             </div>
-            <span className="feature-category">DEMO AI ASSISTANT</span>
-            <h3>AI Field Advisor</h3>
-            <p>Receive conversational, field-aware agronomic guidance powered by Gemini, grounded in your active farm context and scenario data.</p>
+            <span className="feature-category">FARM GUIDE</span>
+            <h3>Field Advisor</h3>
+            <p>Ask straightforward questions about planting dates, soil drainage, and weather conditions for your farm.</p>
             <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("chat")}>
-              <span>Ask Field Guide</span>
+              <span>Ask Advisor</span>
               <ChevronRight size={15} />
             </Button>
           </div>
@@ -1357,25 +1230,25 @@ function LandingPage({
       {/* How it Works Section */}
       <section className="landing-steps-section">
         <div className="landing-section-head">
-          <span className="section-eyebrow">SIMPLE 3-STEP WORKFLOW</span>
-          <h2>How NASABUKID powers your season</h2>
+          <span className="section-eyebrow">HOW IT WORKS</span>
+          <h2>Simple 3-step planting guide</h2>
         </div>
 
         <div className="landing-steps-grid">
           <div className="landing-step-card">
             <div className="step-number">01</div>
-            <h4>Identify Your Field</h4>
-            <p>Select your Bukidnon farm location and boundary to load satellite rainfall and solar data.</p>
+            <h4>Select Your Location</h4>
+            <p>Pick your Bukidnon municipality to load local weather and soil conditions.</p>
           </div>
           <div className="landing-step-card">
             <div className="step-number">02</div>
-            <h4>Test Climate Scenarios</h4>
-            <p>Simulate upcoming dry spells, typhoons, or wet seasons against proven crop sequences.</p>
+            <h4>Check Upcoming Weather</h4>
+            <p>Choose whether you are preparing for typical weather, dry spells, or heavy rain.</p>
           </div>
           <div className="landing-step-card">
             <div className="step-number">03</div>
-            <h4>Execute with Clarity</h4>
-            <p>Replant with confidence, track recovery economics, and consult your dedicated Field Guide.</p>
+            <h4>Get Your Crop Plan</h4>
+            <p>See recommended crop sequences that protect your soil and farm income.</p>
           </div>
         </div>
       </section>
@@ -1385,10 +1258,10 @@ function LandingPage({
         <div className="cta-banner-card">
           <div className="cta-banner-content">
             <Sprout size={32} className="cta-sprout-icon" />
-            <h2>Ready to prepare your farm for the seasons ahead?</h2>
-            <p>Explore climate-smart crop rotations, satellite observations, and demo agronomy tools for Bukidnon.</p>
+            <h2>Ready to plan your next planting?</h2>
+            <p>Explore climate-smart crop rotations, weather insights, and damage recovery tools for Bukidnon.</p>
             <Button size="lg" className="cta-banner-btn" onClick={onLaunch}>
-              <span>Open NASABUKID Field Desk</span>
+              <span>Open Field Desk</span>
               <ArrowRight size={18} />
             </Button>
           </div>
@@ -1461,6 +1334,13 @@ function OverviewPage({
 
   return (
     <div className="agri-overview-container">
+      <OverviewWeatherWidget
+        location={location}
+        placeName={farm.place}
+        onLocationFound={onLocationFound}
+        onOpenFarm={onPlan}
+      />
+
       {/* Quick Actions Row */}
       <div className="agri-quick-actions">
         <Button size="lg" className="agri-btn-primary" onClick={onPlan}>
@@ -1470,13 +1350,6 @@ function OverviewPage({
           <HeartHandshake size={18} /> Check crop damage
         </Button>
       </div>
-
-      <OverviewWeatherWidget
-        location={location}
-        placeName={farm.place}
-        onLocationFound={onLocationFound}
-        onOpenFarm={onPlan}
-      />
 
       <section className="overview-field panel" aria-labelledby="overview-field-heading">
         <div className="overview-section-head">
