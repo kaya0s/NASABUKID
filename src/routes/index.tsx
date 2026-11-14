@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FarmMap } from "@/components/farm-map";
 import { HistoricalWeatherPanel } from "@/components/historical-weather";
+import { OverviewWeatherWidget } from "@/components/overview-weather";
 import { coordinatesSchema, type Coordinates, type HistoricalWeather } from "@/lib/nasa-power";
 import {
   calculateEstimatedLoss, type ClimateScenario, rotationsForScenario, rotationsForFarm,
@@ -56,6 +57,13 @@ const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; section: string }
 const SCENARIOS: ClimateScenario[] = ["Typical", "El Niño-like", "Wet"];
 const SUGGESTED_QUESTIONS = ["Why plant a legume after corn?", "What changes in a dry season?", "How was my loss estimate calculated?"];
 const SEED_FARM: Farm = { place: "Location not identified", area: "4.2", crop: "Corn", previous: "Mungbean", ph: "", soil: "", irrigation: "Unknown", drainage: "Unknown", planted: "2026-06-15" };
+
+/**
+ * Display toggles for footer and metadata sections.
+ * Change to false to hide, or true to show.
+ */
+const SHOW_API_SOURCES = false;
+const SHOW_FOOTER_NASA_INFO = false;
 const HAZARD_RATES: Record<Hazard, { affected: number; yieldLoss: number; observation: string; icon: typeof Waves }> = {
   Flooding: { affected: 65, yieldLoss: 35, observation: "Standing water observed between rows; sample leaf yellowing and stem lodging visible." , icon: Waves },
   Drought: { affected: 50, yieldLoss: 28, observation: "Sample observation: leaf curling and dry surface soil are consistent with water stress." , icon: Sun },
@@ -195,7 +203,7 @@ function FieldShift() {
     setChatInput("");
   }
 
-  const pageTitle: Record<Page, string> = { overview: "Your farm, better prepared.", farm: "A little about your farm.", prevention: "Plan for the season ahead.", recovery: "Let’s understand what happened.", evidence: "See what’s behind each score.", chat: "A field-side sounding board." };
+  const pageTitle: Record<Page, string> = { overview: "Overview", farm: "My farm", prevention: "Crop planning", recovery: "Damage recovery", evidence: "Evidence & scoring", chat: "Field advisor" };
 
   return (
     <div className="app-shell">
@@ -216,9 +224,34 @@ function FieldShift() {
       <main className="main-area">
         <header className="topbar"><div className="topbar-left"><Button size="icon" variant="ghost" className="mobile-menu" aria-label="Open menu" onClick={() => setMobileNavOpen(true)}><Menu /></Button><span className="crumb">FIELD DESK</span><ChevronRight size={14} className="crumb-divider" /><span className="crumb-current">{NAV.find((item) => item.id === page)?.label ?? "Overview"}</span></div><div className="topbar-right"><span className="demo-label"><span className="demo-dot" /> DEMO SCORES</span><span className="user-chip"><span className="user-avatar">B</span><span className="user-name">Bukidnon grower</span><ChevronDown size={14} /></span></div></header>
         <div className="page-wrap">
-          <div className="page-intro"><div><span className="eyebrow">FIELD NOTES <span className="eyebrow-dot" /> BUKIDNON, PHILIPPINES</span><h1>{pageTitle[page]}</h1><p className="intro-copy">{page === "overview" ? "Grounded crop planning for a changing climate — shaped around the way your farm grows." : page === "farm" ? "Every field is different. Let’s make these sample recommendations feel a little more like yours." : page === "prevention" ? "Explore historical NASA weather for your farm and compare illustrative crop rotations." : page === "recovery" ? "Share a little about the damage. This sample estimate is a starting point for your next steps." : page === "evidence" ? "A transparent look at sample scoring, calculations, and the resources that could inform a real plan." : page === "chat" ? "Have a question about your sample plan? Let’s think it through together." : ""}</p></div>{page !== "overview" && <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}><ArrowLeft size={16} /> Overview</Button>}</div>
+          <div className="page-intro">
+            <div>
+              {page !== "overview" && (
+                <span className="eyebrow"><MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}</span>
+              )}
+              <h1>{pageTitle[page]}</h1>
+              {page !== "overview" && (
+                <p className="intro-copy">
+                  {page === "farm" ? "Set your location, boundary, and field details for customized recommendations." : page === "prevention" ? "Explore NASA weather and compare crop rotations." : page === "recovery" ? "Estimate potential crop loss and planning next steps." : page === "evidence" ? "Methodology and data sources behind rotation scores." : page === "chat" ? "Ask questions about your sample field plan." : ""}
+                </p>
+              )}
+            </div>
+            {page !== "overview" && <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}><ArrowLeft size={16} /> Overview</Button>}
+          </div>
 
-          {page === "overview" && <OverviewPage farm={farm} onPlan={() => goTo("farm")} onRecover={() => goTo("recovery")} onPrevention={() => goTo("prevention")} onChat={() => goTo("chat")} />}
+          {page === "overview" && (
+            <OverviewPage
+              farm={farm}
+              location={location}
+              onLocationFound={(coords) => {
+                updateLocation(coords);
+              }}
+              onPlan={() => goTo("farm")}
+              onRecover={() => goTo("recovery")}
+              onPrevention={() => goTo("prevention")}
+              onChat={() => goTo("chat")}
+            />
+          )}
           {page === "farm" && <FarmPage farm={farm} location={location} boundary={boundary} onBoundary={updateBoundary} onLocation={updateLocation} onUpdate={updateFarm} onContinue={() => goTo("prevention")} />}
           <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
           {page === "prevention" && <>
@@ -229,8 +262,13 @@ function FieldShift() {
           {page === "evidence" && <EvidencePage rotations={rotations} scenario={scenario} selected={evidenceRotation} setSelected={setEvidenceRotation} onChat={() => goTo("chat")} />}
           {page === "chat" && <ChatPage farm={farm} messages={chatMessages} input={chatInput} setInput={setChatInput} onSend={sendQuestion} onSuggestion={sendQuestion} scenario={scenario} rotation={activeRotation.name} hazard={hazard} loss={lossLabel} />}
 
-          <ApiSources />
-          <footer className="page-footer"><span><Sprout size={14} /> Made for the seasons ahead.</span><span>FieldShift AI <span className="footer-divider">·</span> NASA Space Apps demo <span className="footer-divider">·</span> Historical NASA access · Demo scores · No AI connected</span></footer>
+          {SHOW_API_SOURCES && <ApiSources />}
+          <footer className="page-footer">
+            <span><Sprout size={14} /> Made for the seasons ahead.</span>
+            {SHOW_FOOTER_NASA_INFO && (
+              <span>FieldShift AI <span className="footer-divider">·</span> NASA Space Apps demo <span className="footer-divider">·</span> Historical NASA access · Demo scores · No AI connected</span>
+            )}
+          </footer>
         </div>
       </main>
 
@@ -244,13 +282,103 @@ function FieldShift() {
   );
 }
 
-function OverviewPage({ farm, onPlan, onRecover, onPrevention, onChat }: { farm: Farm; onPlan: () => void; onRecover: () => void; onPrevention: () => void; onChat: () => void }) {
-  return <>
-    <section className="welcome-hero"><img src={bukidnonFields} alt="Farms nestled in the green highlands of Bukidnon" width={1600} height={960} /><div className="hero-scrim" /><div className="hero-content"><span className="hero-overline"><span className="hero-spark" /> A NEW SEASON, A CLEARER VIEW</span><h2>Rooted in your land.<br />Ready for what’s next.</h2><p>A thoughtful first step for <strong>{farm.area} hectares</strong> in <strong>{farm.place}</strong>.</p><div className="hero-actions"><Button size="lg" className="hero-primary" onClick={onPlan}><Sprout size={17} /> Plan my crops <ArrowRight size={16} /></Button><Button size="lg" className="hero-secondary" variant="outline" onClick={onRecover}><Activity size={17} /> Assess crop damage</Button></div></div><div className="hero-bottom"><span><MapPin size={13} /> IMPASUG-ONG HIGHLANDS <span className="hero-bottom-sep">·</span> BUKIDNON</span><span>DEMO LANDSCAPE <span className="hero-bottom-sep">·</span> NOT A SATELLITE IMAGE</span></div></section>
-    <div className="home-section-heading"><div><span className="eyebrow">YOUR STARTING POINT</span><h2>A few useful next steps.</h2></div><span className="updated-label"><span className="updated-check"><Check size={12} /></span> Sample farm profile loaded</span></div>
-    <div className="overview-cards"><button className="workspace-card planner-card" onClick={onPrevention}><div className="workspace-card-top"><span className="workspace-icon mint-icon"><CloudSun size={20} /></span><span className="card-arrow"><ArrowUpRight size={17} /></span></div><span className="card-kicker">01 <span>·</span> PLAN AHEAD</span><strong>Find a rotation that fits.</strong><span className="workspace-copy">Compare sample crop sequences against a dry, typical, or wetter season.</span><span className="workspace-link">Explore crop planning <ArrowRight size={14} /></span></button><button className="workspace-card recovery-card" onClick={onRecover}><div className="workspace-card-top"><span className="workspace-icon peach-icon"><HeartHandshake size={20} /></span><span className="card-arrow"><ArrowUpRight size={17} /></span></div><span className="card-kicker">02 <span>·</span> RECOVER</span><strong>Find a way forward.</strong><span className="workspace-copy">Try a sample crop-damage check and estimate a possible income impact.</span><span className="workspace-link">Start a damage check <ArrowRight size={14} /></span></button><button className="workspace-card advisor-card" onClick={onChat}><div className="workspace-card-top"><span className="workspace-icon lilac-icon"><MessageCircle size={20} /></span><span className="card-arrow"><ArrowUpRight size={17} /></span></div><span className="card-kicker">03 <span>·</span> TALK IT THROUGH</span><strong>Think out loud.</strong><span className="workspace-copy">Ask a friendly demo advisor about your sample plan or estimate.</span><span className="workspace-link">Visit your field advisor <ArrowRight size={14} /></span></button></div>
-    <div className="note-strip"><ShieldCheck size={16} /><span>The map and NASA historical weather access are connected. Crop scores and scenarios use <strong>demo assumptions</strong>. No forecasts, damage detection, or AI responses are connected.</span><button onClick={onChat}>What does “demo” mean? <ArrowUpRight size={14} /></button></div>
-  </>;
+function OverviewPage({
+  farm,
+  location,
+  onLocationFound,
+  onPlan,
+  onRecover,
+  onPrevention,
+  onChat,
+}: {
+  farm: Farm;
+  location: Coordinates;
+  onLocationFound: (coords: Coordinates) => void;
+  onPlan: () => void;
+  onRecover: () => void;
+  onPrevention: () => void;
+  onChat: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<string>("All");
+
+  return (
+    <div className="agri-overview-container">
+      {/* Top Agricultural Weather & Greeting Banner */}
+      <OverviewWeatherWidget
+        location={location}
+        onLocationFound={onLocationFound}
+      />
+
+      {/* Section Header: "My Fields" with "See All" */}
+      <div className="agri-section-header">
+        <h2 className="agri-section-title">My Fields</h2>
+        <button type="button" className="agri-see-all-btn" onClick={onPlan}>
+          See All
+        </button>
+      </div>
+
+      {/* Horizontal Filter Chips */}
+      <div className="agri-pill-filters" role="tablist">
+        {["All", "Corn", "Vegetables", "Legumes", "Root Crops"].map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            className={`agri-pill ${activeTab === cat ? "agri-pill-active" : ""}`}
+            onClick={() => setActiveTab(cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Modern Visual Cards with Images & Bookmarks */}
+      <div className="agri-cards-scroller">
+        <article className="agri-field-card" onClick={onPrevention}>
+          <div className="agri-card-media">
+            <img src={bukidnonFields} alt="Bukidnon crop planning field" />
+            <button className="agri-bookmark-btn" aria-label="Bookmark" onClick={(e) => e.stopPropagation()}>
+              <Sprout size={16} />
+            </button>
+          </div>
+          <div className="agri-card-info">
+            <h3>Optimize Crop Harvest</h3>
+            <p>Compare crop rotation sequences for upcoming dry or wet seasons.</p>
+            <div className="agri-card-foot">
+              <span className="agri-tag">Crop Planning</span>
+              <span className="agri-action-arrow"><ArrowRight size={15} /></span>
+            </div>
+          </div>
+        </article>
+
+        <article className="agri-field-card" onClick={onRecover}>
+          <div className="agri-card-media">
+            <img src={floodCorn} alt="Damage check field in Bukidnon" />
+            <button className="agri-bookmark-btn" aria-label="Bookmark" onClick={(e) => e.stopPropagation()}>
+              <HeartHandshake size={16} />
+            </button>
+          </div>
+          <div className="agri-card-info">
+            <h3>Field Damage Check</h3>
+            <p>Calculate weather loss and evaluate stand recovery after storms.</p>
+            <div className="agri-card-foot">
+              <span className="agri-tag tag-coral">Damage Assessment</span>
+              <span className="agri-action-arrow"><ArrowRight size={15} /></span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      {/* Quick Actions Row */}
+      <div className="agri-quick-actions">
+        <Button size="lg" className="agri-btn-primary" onClick={onPlan}>
+          <Sprout size={18} /> Plan My Crops
+        </Button>
+        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
+          <MessageCircle size={18} /> Ask Advisor
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function FarmPage({ farm, location, boundary, onBoundary, onLocation, onUpdate, onContinue }: { farm: Farm; boundary: Coordinates[]; onBoundary: (points: Coordinates[]) => void; location: Coordinates; onLocation: (location: Coordinates) => void; onUpdate: (key: keyof Farm, value: string) => void; onContinue: () => void }) {
