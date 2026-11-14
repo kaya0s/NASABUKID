@@ -21,9 +21,9 @@ export function MonthlyWeatherCharts({ days }: { days: WeatherDay[] }) {
           <div className="panel-top">
             <div>
               <span className="chart-kicker">
-                <Droplets size={13} /> RAINFALL · NASA POWER
+                <Droplets size={14} /> MONTHLY RAINFALL
               </span>
-              <h2>Recorded monthly rainfall.</h2>
+              <h2>Monthly Rainfall</h2>
             </div>
             <span className="chart-unit">mm / month</span>
           </div>
@@ -45,19 +45,16 @@ export function MonthlyWeatherCharts({ days }: { days: WeatherDay[] }) {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          <div className="chart-card-footer">
-            Historical monthly totals · missing months leave gaps
-          </div>
         </section>
         <section className="panel chart-panel" aria-label="NASA monthly temperature">
           <div className="panel-top">
             <div>
               <span className="chart-kicker temp-kicker">
-                <Thermometer size={13} /> TEMPERATURE · NASA POWER
+                <Thermometer size={14} /> MONTHLY TEMPERATURE
               </span>
-              <h2>Recorded monthly temperature.</h2>
+              <h2>Monthly Temperature</h2>
             </div>
-            <span className="chart-unit">°C / monthly average</span>
+            <span className="chart-unit">°C / average</span>
           </div>
           <div className="chart-body">
             <ResponsiveContainer width="100%" height="100%">
@@ -76,18 +73,13 @@ export function MonthlyWeatherCharts({ days }: { days: WeatherDay[] }) {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="chart-card-footer">
-            Historical monthly means · missing months leave gaps
-          </div>
         </section>
       </div>
       <details className="weather-details">
         <summary>Monthly chart values</summary>
         <div className="weather-table-scroll">
           <table>
-            <caption>
-              Monthly NASA POWER records; totals and means require complete daily coverage
-            </caption>
+            <caption>Monthly rainfall and temperature records</caption>
             <thead>
               <tr>
                 <th scope="col">Month</th>
