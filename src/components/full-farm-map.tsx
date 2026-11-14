@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, Globe, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, Sprout, ThermometerSun, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, Globe, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, ShieldAlert, ShieldCheck, Sprout, Sun, ThermometerSun, Trash2, Waves, Wind, X, ZoomIn, ZoomOut } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,8 @@ import {
 } from "@/components/farm-map";
 import { measureFarmBoundary } from "@/lib/farm-boundary";
 import { checkFarmLandUse, type LandUseCheckResult } from "@/lib/farm-context";
-import { buildRotationStrategies, detectPlantedCrop, getCropProfile } from "@/lib/fieldshift-demo";
+import { RECOVERY_STEPS } from "@/lib/advisor";
+import { buildRotationStrategies, calculateEstimatedLoss, detectPlantedCrop, getCropProfile } from "@/lib/fieldshift-demo";
 import {
   fetchRecentModisNdvi,
   summarizeWeather,
@@ -25,7 +26,43 @@ import {
 
 type MapStyle = "satellite" | "street";
 type HeatmapLayer = "none" | "lst" | "soil_moisture" | "ndvi";
+type AdvisoryMode = "rotation" | "recovery";
+type HazardType = "Flooding" | "Drought" | "Typhoon" | "Heat";
 const ENABLE_FARM_LOT_VERIFICATION = false;
+const SHOW_COMPACT_RECOVERY_UI = false;
+const ENABLE_RECOVERY_MODAL = false;
+
+const RECOVERY_HAZARDS: Record<
+  HazardType,
+  { icon: typeof Waves; summary: string; replantNote: string }
+> = {
+  Flooding: {
+    icon: Waves,
+    summary: "Check standing water, root rot risk, and field drainage channels before replanting.",
+    replantNote: "Mungbean or sweet potato can help utilize leftover soil moisture once water recedes.",
+  },
+  Drought: {
+    icon: Sun,
+    summary: "Track soil dryness, irrigation access, and heat stress across affected sections.",
+    replantNote: "Drought-tolerant mungbean or cassava fits lower-moisture recovery windows.",
+  },
+  Typhoon: {
+    icon: Wind,
+    summary: "Inspect wind lodging and snapped stems only when field access is safe.",
+    replantNote: "Short-cycle mungbean (60–65 days) supports quick turnover after storm cleanup.",
+  },
+  Heat: {
+    icon: ThermometerSun,
+    summary: "Monitor topsoil heat, leaf scorch, and midday wilting on exposed slopes.",
+    replantNote: "Cover crops or heat-tolerant varieties help protect exposed topsoil.",
+  },
+};
+
+const PHP_FORMATTER = new Intl.NumberFormat("en-PH", {
+  style: "currency",
+  currency: "PHP",
+  maximumFractionDigits: 0,
+});
 
 function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371000;
@@ -426,6 +463,24 @@ export function FullFarmMap({
   farm,
   onUpdateFarm,
   onContinue,
+  onBrandClick,
+  advisoryMode = "rotation",
+  onAdvisoryModeChange,
+  hazard = "Flooding",
+  onHazardChange,
+  affected = 65,
+  onAffectedChange,
+  yieldLoss = 35,
+  onYieldLossChange,
+  price = "17",
+  onPriceChange,
+  expectedYield = "4200",
+  onExpectedYieldChange,
+  damageDate = "2026-10-29",
+  onDamageDateChange,
+  legacyRecoveryContent,
+  cardRecoveryContent,
+  onOpenRecovery,
   historical = null,
   climateLoading = false,
   terrain = null,
@@ -439,7 +494,25 @@ export function FullFarmMap({
   areaLabel: string;
   farm: FarmProfileData;
   onUpdateFarm: (key: keyof FarmProfileData, value: string) => void;
-  onContinue: () => void;
+  onContinue?: () => void;
+  onBrandClick?: () => void;
+  advisoryMode?: AdvisoryMode;
+  onAdvisoryModeChange?: (mode: AdvisoryMode) => void;
+  hazard?: HazardType;
+  onHazardChange?: (hazard: HazardType) => void;
+  affected?: number;
+  onAffectedChange?: (value: number) => void;
+  yieldLoss?: number;
+  onYieldLossChange?: (value: number) => void;
+  price?: string;
+  onPriceChange?: (value: string) => void;
+  expectedYield?: string;
+  onExpectedYieldChange?: (value: string) => void;
+  damageDate?: string;
+  onDamageDateChange?: (value: string) => void;
+  legacyRecoveryContent?: ReactNode;
+  cardRecoveryContent?: ReactNode;
+  onOpenRecovery?: () => void;
   historical?: HistoricalWeather | null;
   climateLoading?: boolean;
   terrain?: { elevation: number; slopePercent: number } | null;
@@ -463,8 +536,58 @@ export function FullFarmMap({
   const [radiusMeters, setRadiusMeters] = useState(100);
   const radiusRef = useRef(radiusMeters);
   radiusRef.current = radiusMeters;
-  const [profileOpen, setProfileOpen] = useState(boundary.length >= 3);
-  const [drawerTab, setDrawerTab] = useState<"rotation" | "profile">("rotation");
+  const [profileOpen, setProfileOpen] = useState(true);
+  const [drawerTab, setDrawerTab] = useState<"rotation" | "recovery" | "profile">(
+    !ENABLE_RECOVERY_MODAL && advisoryMode === "recovery" ? "recovery" : "rotation",
+  );
+  const [recoveryModalOpen, setRecoveryModalOpen] = useState(
+    ENABLE_RECOVERY_MODAL && advisoryMode === "recovery",
+  );
+  const [localHazard, setLocalHazard] = useState<HazardType>(hazard);
+  const [localAffected, setLocalAffected] = useState(affected);
+  const [localYieldLoss, setLocalYieldLoss] = useState(yieldLoss);
+  const [localPrice, setLocalPrice] = useState(price);
+  const [localExpectedYield, setLocalExpectedYield] = useState(expectedYield);
+  const [localDamageDate, setLocalDamageDate] = useState(damageDate);
+
+  const activeHazard = onHazardChange ? hazard : localHazard;
+  const setActiveHazard = onHazardChange ?? setLocalHazard;
+  const activeAffected = onAffectedChange ? affected : localAffected;
+  const setActiveAffected = onAffectedChange ?? setLocalAffected;
+  const activeYieldLoss = onYieldLossChange ? yieldLoss : localYieldLoss;
+  const setActiveYieldLoss = onYieldLossChange ?? setLocalYieldLoss;
+  const activePrice = onPriceChange ? price : localPrice;
+  const setActivePrice = onPriceChange ?? setLocalPrice;
+  const activeExpectedYield = onExpectedYieldChange ? expectedYield : localExpectedYield;
+  const setActiveExpectedYield = onExpectedYieldChange ?? setLocalExpectedYield;
+  const activeDamageDate = onDamageDateChange ? damageDate : localDamageDate;
+  const setActiveDamageDate = onDamageDateChange ?? setLocalDamageDate;
+
+  useEffect(() => {
+    if (advisoryMode === "recovery") {
+      if (ENABLE_RECOVERY_MODAL) {
+        setRecoveryModalOpen(true);
+      } else {
+        setDrawerTab("recovery");
+      }
+    } else {
+      setRecoveryModalOpen(false);
+      setDrawerTab("rotation");
+    }
+    setProfileOpen(true);
+  }, [advisoryMode]);
+
+  useEffect(() => {
+    if (!recoveryModalOpen) return undefined;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setRecoveryModalOpen(false);
+        onAdvisoryModeChange?.("rotation");
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [recoveryModalOpen, onAdvisoryModeChange]);
   const [expandedStrategyId, setExpandedStrategyId] = useState<string>("legume-break");
   const [detailTab, setDetailTab] = useState<"proscons" | "pests">("proscons");
   const [modisNdvi, setModisNdvi] = useState<ModisNdviSeries | null>(null);
@@ -487,10 +610,6 @@ export function FullFarmMap({
 
   useEffect(() => {
     setManualCropOverride(false);
-    if (boundary.length < 3) {
-      setModisNdvi(null);
-      return;
-    }
     const controller = new AbortController();
     setNdviLoading(true);
     void fetchRecentModisNdvi(location, controller.signal).then((series) => {
@@ -499,7 +618,7 @@ export function FullFarmMap({
       setNdviLoading(false);
     });
     return () => controller.abort();
-  }, [location.latitude, location.longitude, boundary.length]);
+  }, [location.latitude, location.longitude]);
 
   useEffect(() => {
     if (
@@ -581,12 +700,12 @@ export function FullFarmMap({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function getLeftAreaPadding(rightPanelVisible: boolean) {
+  function getLeftAreaPadding(leftPanelVisible: boolean) {
     const isDesktop = (containerRef.current?.clientWidth ?? 0) >= 768;
-    if (isDesktop && rightPanelVisible) {
+    if (isDesktop && leftPanelVisible) {
       return {
-        paddingTopLeft: [48, 84] as [number, number],
-        paddingBottomRight: [490, 44] as [number, number],
+        paddingTopLeft: [490, 84] as [number, number],
+        paddingBottomRight: [48, 84] as [number, number],
       };
     }
     return {
@@ -1082,15 +1201,22 @@ export function FullFarmMap({
       {/* Minimalist floating HUD — no bulky cards */}
       <div className="full-map-hud-top">
         <div className="full-map-hud-left">
-          <div className="full-map-pill">
-            <MapPin size={14} />
-            <span>
-              {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
-            </span>
-            <span className="hud-sep">·</span>
-            <strong>{drawing && draftArea ? draftArea : `${areaLabel} ha`}</strong>
-          </div>
-
+          {onBrandClick && (
+            <button
+              type="button"
+              className="glass-brand-pill"
+              onClick={onBrandClick}
+              title="Return to Overview"
+            >
+              <span className="glass-brand-mark">
+                <Sprout size={16} strokeWidth={2} />
+              </span>
+              <span className="brand-name">
+                <span className="brand-nasa">NASA</span>
+                <span className="brand-bukid">BUKID</span>
+              </span>
+            </button>
+          )}
           <div className="full-map-search-wrap" ref={searchWrapRef}>
             <div className="full-map-search-box">
               {searching ? (
@@ -1370,14 +1496,26 @@ export function FullFarmMap({
         </div>
       </div>
 
-      {/* Right-side Plot Intelligence & Farm Profile Drawer */}
-      {boundary.length >= 3 && !drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block" && (
+      {/* Left-side Plot Intelligence & Advisory Drawer */}
+      {!drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block" && (
         <aside className="full-map-profile-panel" aria-label="Plot intelligence and farm profile">
           <div className="full-map-profile-head">
             <div>
               <div className="drawer-badges-row">
-                <span className="drawer-badge-nasa">REGIONAL DATA · DEMO OPTIONS</span>
-                <span className="drawer-badge-engine">Rotation Engine</span>
+                <span className="drawer-badge-nasa">
+                  {drawerTab === "recovery"
+                    ? "REGIONAL DATA · DEMO ESTIMATE"
+                    : drawerTab === "profile"
+                      ? "FIELD RECORD"
+                      : "REGIONAL DATA · DEMO OPTIONS"}
+                </span>
+                <span className="drawer-badge-engine">
+                  {drawerTab === "recovery"
+                    ? "Recovery Engine"
+                    : drawerTab === "profile"
+                      ? "Soil & Plot"
+                      : "Rotation Engine"}
+                </span>
                 {historical?.sourceUrl && (
                   <a
                     href={historical.sourceUrl}
@@ -1389,13 +1527,19 @@ export function FullFarmMap({
                   </a>
                 )}
               </div>
-              <h3>{drawerTab === "rotation" ? "Crop Rotation & Land Advisory" : "Farm Profile"}</h3>
+              <h3>
+                {drawerTab === "recovery"
+                  ? "Disaster Recovery & Loss Check"
+                  : drawerTab === "profile"
+                    ? "Farm Profile"
+                    : "Crop Rotation & Land Advisory"}
+              </h3>
             </div>
             <div className="full-map-profile-head-right">
               <button
                 type="button"
                 className="full-map-profile-close"
-                aria-label="Close farm profile panel"
+                aria-label="Close advisory panel"
                 onClick={() => setProfileOpen(false)}
               >
                 <X size={14} />
@@ -1407,24 +1551,294 @@ export function FullFarmMap({
             <button
               type="button"
               role="tab"
-              aria-selected={drawerTab === "rotation"}
-              className={drawerTab === "rotation" ? "is-active" : ""}
-              onClick={() => setDrawerTab("rotation")}
+              aria-selected={!recoveryModalOpen && drawerTab === "rotation"}
+              className={!recoveryModalOpen && drawerTab === "rotation" ? "is-active" : ""}
+              onClick={() => {
+                setRecoveryModalOpen(false);
+                setDrawerTab("rotation");
+                onAdvisoryModeChange?.("rotation");
+              }}
             >
-              Crop Rotation &amp; Telemetry
+              Crop Rotation
             </button>
             <button
               type="button"
               role="tab"
-              aria-selected={drawerTab === "profile"}
-              className={drawerTab === "profile" ? "is-active" : ""}
-              onClick={() => setDrawerTab("profile")}
+              aria-selected={ENABLE_RECOVERY_MODAL ? recoveryModalOpen : drawerTab === "recovery"}
+              className={
+                (ENABLE_RECOVERY_MODAL ? recoveryModalOpen : drawerTab === "recovery")
+                  ? "is-active"
+                  : ""
+              }
+              onClick={() => {
+                onOpenRecovery?.();
+                if (ENABLE_RECOVERY_MODAL) {
+                  setRecoveryModalOpen(true);
+                } else {
+                  setDrawerTab("recovery");
+                }
+                onAdvisoryModeChange?.("recovery");
+              }}
+            >
+              Disaster Recovery
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!recoveryModalOpen && drawerTab === "profile"}
+              className={!recoveryModalOpen && drawerTab === "profile" ? "is-active" : ""}
+              onClick={() => {
+                setRecoveryModalOpen(false);
+                setDrawerTab("profile");
+              }}
             >
               Farm Profile
             </button>
           </div>
 
-          {drawerTab === "rotation" ? (
+          {drawerTab === "recovery" ? (
+            (() => {
+              const moistureTag =
+                moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
+              const parsedArea = Number(farm.area);
+              const parsedYield = Number(activeExpectedYield);
+              const parsedPrice = Number(activePrice);
+              const validRecoveryInputs =
+                Number.isFinite(parsedArea) &&
+                parsedArea >= 0 &&
+                Number.isFinite(parsedYield) &&
+                parsedYield >= 0 &&
+                Number.isFinite(parsedPrice) &&
+                parsedPrice >= 0;
+              const estimatedLoss = validRecoveryInputs
+                ? calculateEstimatedLoss({
+                    areaHectares: parsedArea,
+                    affectedFraction: activeAffected / 100,
+                    expectedYieldKgPerHectare: parsedYield,
+                    yieldLossFraction: activeYieldLoss / 100,
+                    pricePerKg: parsedPrice,
+                  })
+                : 0;
+              const hazardMeta = RECOVERY_HAZARDS[activeHazard];
+
+              if (!SHOW_COMPACT_RECOVERY_UI && cardRecoveryContent) {
+                return (
+                  <div className="drawer-card-recovery-wrap">
+                    {cardRecoveryContent}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="drawer-rotation-body">
+                  <div className="drawer-telemetry-grid" aria-label="Farm weather and soil summary">
+                    <button
+                      type="button"
+                      className={`telemetry-tile is-smap is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
+                      aria-pressed={heatmap === "soil_moisture"}
+                      title="Show soil moisture on the map"
+                      onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
+                    >
+                      <div className="telemetry-tile-head">
+                        <Droplets size={14} />
+                        <span>MOISTURE</span>
+                      </div>
+                      <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
+                      <small>{moistureTag}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className={`telemetry-tile is-modis is-action ${heatmap === "lst" ? "is-on" : ""}`}
+                      aria-pressed={heatmap === "lst"}
+                      title="Show ground heat on the map"
+                      onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
+                    >
+                      <div className="telemetry-tile-head">
+                        <ThermometerSun size={14} />
+                        <span>HEAT</span>
+                      </div>
+                      <strong>
+                        {climateLoading
+                          ? "…"
+                          : surfaceTemp !== null
+                            ? `${surfaceTemp.toFixed(1)}°C`
+                            : "—"}
+                      </strong>
+                      <small>Ground Temp</small>
+                    </button>
+                    <div className="telemetry-tile is-gpm">
+                      <div className="telemetry-tile-head">
+                        <CloudRain size={14} />
+                        <span>RAIN</span>
+                      </div>
+                      <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)}mm` : "—"}</strong>
+                      <small>Last 30 Days</small>
+                    </div>
+                    <button
+                      type="button"
+                      className={`telemetry-tile is-ndvi is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
+                      aria-pressed={heatmap === "ndvi"}
+                      title="Show plant health on the map"
+                      onClick={() => setHeatmap(heatmap === "ndvi" ? "none" : "ndvi")}
+                    >
+                      <div className="telemetry-tile-head">
+                        <Sprout size={14} />
+                        <span>HEALTH</span>
+                      </div>
+                      <strong>
+                        {ndviLoading
+                          ? "…"
+                          : modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                            ? modisNdvi.latestNdvi.toFixed(2)
+                            : heatmap === "ndvi"
+                              ? "On"
+                              : "—"}
+                      </strong>
+                      <small>Greenness</small>
+                    </button>
+                  </div>
+
+                  {!SHOW_COMPACT_RECOVERY_UI && legacyRecoveryContent && (
+                    <div className="drawer-legacy-recovery">{legacyRecoveryContent}</div>
+                  )}
+
+                  {SHOW_COMPACT_RECOVERY_UI && (
+                    <>
+                  <div className="drawer-recovery-section">
+                    <div className="drawer-sequence-heading">WHAT HAPPENED ON THIS FIELD?</div>
+                    <div className="drawer-hazard-grid" role="group" aria-label="Select weather event">
+                      {(Object.keys(RECOVERY_HAZARDS) as HazardType[]).map((item) => {
+                        const Icon = RECOVERY_HAZARDS[item].icon;
+                        const active = activeHazard === item;
+                        return (
+                          <button
+                            key={item}
+                            type="button"
+                            className={`drawer-hazard-btn ${active ? "is-active" : ""}`}
+                            aria-pressed={active}
+                            onClick={() => setActiveHazard(item)}
+                          >
+                            <Icon size={15} />
+                            <span>{item}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="drawer-recovery-note">{hazardMeta.summary}</p>
+                  </div>
+
+                  <div className="drawer-recovery-loss-box">
+                    <div className="drawer-recovery-loss-head">
+                      <span>ESTIMATED INCOME AT RISK · DEMO</span>
+                      <strong>
+                        {validRecoveryInputs ? `${PHP_FORMATTER.format(estimatedLoss)} PHP` : "Check inputs"}
+                      </strong>
+                    </div>
+                    <div className="drawer-recovery-sliders">
+                      <label className="drawer-range-field">
+                        <div>
+                          <span>Area affected</span>
+                          <b>{activeAffected}%</b>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={activeAffected}
+                          onChange={(e) => setActiveAffected(Number(e.target.value))}
+                        />
+                      </label>
+                      <label className="drawer-range-field">
+                        <div>
+                          <span>Expected yield loss</span>
+                          <b>{activeYieldLoss}%</b>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={activeYieldLoss}
+                          onChange={(e) => setActiveYieldLoss(Number(e.target.value))}
+                        />
+                      </label>
+                    </div>
+                    <div className="drawer-recovery-inputs">
+                      <div className="form-field">
+                        <Label htmlFor="drawer-damage-date">Event date</Label>
+                        <Input
+                          id="drawer-damage-date"
+                          type="date"
+                          value={activeDamageDate}
+                          onChange={(e) => setActiveDamageDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-field">
+                        <Label htmlFor="drawer-recovery-area">Area (ha)</Label>
+                        <Input
+                          id="drawer-recovery-area"
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={farm.area}
+                          onChange={(e) => onUpdateFarm("area", e.target.value)}
+                        />
+                      </div>
+                      <div className="form-field">
+                        <Label htmlFor="drawer-yield-est">Yield (kg/ha)</Label>
+                        <Input
+                          id="drawer-yield-est"
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={activeExpectedYield}
+                          onChange={(e) => setActiveExpectedYield(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-field">
+                        <Label htmlFor="drawer-price-est">Price (₱/kg)</Label>
+                        <Input
+                          id="drawer-price-est"
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={activePrice}
+                          onChange={(e) => setActivePrice(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <small className="drawer-recovery-foot">
+                      Sample calculation ({farm.area} ha × {activeAffected}% × {activeYieldLoss}% ×{" "}
+                      {activeExpectedYield} kg/ha × ₱{activePrice}/kg). Not a verified claim.
+                    </small>
+                  </div>
+
+                  <div className="drawer-recovery-section">
+                    <div className="drawer-sequence-heading">POSSIBLE NEXT STEPS · {activeHazard.toUpperCase()}</div>
+                    <ol className="drawer-recovery-steps">
+                      {RECOVERY_STEPS[activeHazard].map((step, index) => (
+                        <li key={step}>
+                          <span>{index + 1}</span>
+                          <p>{step}</p>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div className="drawer-recovery-replant">
+                    <div className="drawer-recovery-replant-head">
+                      <ShieldCheck size={14} />
+                      <span>FAST REPLANTING NOTE</span>
+                    </div>
+                    <p>{hazardMeta.replantNote}</p>
+                  </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()
+          ) : drawerTab === "rotation" ? (
             (() => {
               const moistureTag =
                 moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
@@ -1917,17 +2331,21 @@ export function FullFarmMap({
             </>
           )}
 
-          <div className="full-map-profile-foot">
-            <span className="full-map-profile-saved">
-              <span className="save-indicator">
-                <Check size={11} />
+          {drawerTab !== "recovery" && (
+            <div className="full-map-profile-foot">
+              <span className="full-map-profile-saved">
+                <span className="save-indicator">
+                  <Check size={11} />
+                </span>
+                Saved in this browser
               </span>
-              Saved in this browser
-            </span>
-            <Button type="button" size="sm" onClick={onContinue}>
-              Continue to crop planning <ArrowRight size={14} />
-            </Button>
-          </div>
+              {onContinue && (
+                <Button type="button" size="sm" onClick={onContinue}>
+                  Continue to crop planning <ArrowRight size={14} />
+                </Button>
+              )}
+            </div>
+          )}
         </aside>
       )}
 
@@ -2031,10 +2449,30 @@ export function FullFarmMap({
         </div>
       )}
 
+      {/* Bottom-right coordinates & area pill */}
+      {!drawing && (
+        <div className="full-map-coords-pill" aria-label="Selected field coordinates and area">
+          <MapPin size={13} />
+          <span>
+            {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
+          </span>
+          <span className="full-map-coords-sep" aria-hidden="true">•</span>
+          <span>
+            {boundary.length >= 3
+              ? (() => {
+                  try {
+                    return `${measureFarmBoundary(boundary).hectares.toFixed(4)} ha`;
+                  } catch {
+                    return "Invalid area";
+                  }
+                })()
+              : `${((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)} ha`}
+          </span>
+        </div>
+      )}
+
       {/* Bottom-right zoom controls */}
-      <div
-        className={`full-map-zoom ${boundary.length >= 3 && !drawing && profileOpen ? "is-shifted" : ""}`}
-      >
+      <div className="full-map-zoom">
         <Button
           type="button"
           size="icon"
@@ -2055,9 +2493,76 @@ export function FullFarmMap({
         </Button>
       </div>
 
-      {/* Bottom-left map layer switcher & legend HUD */}
+      {/* Left-side vertical heatmap layer switcher */}
       {!drawing && (
-        <div className="full-map-bottom-hud" aria-label="Map view controls">
+        <div
+          className={`full-map-heatmap-rail ${
+            !drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block"
+              ? "is-shifted"
+              : ""
+          }`}
+          role="group"
+          aria-label="Map view mode"
+        >
+          {!profileOpen && (
+            <button
+              type="button"
+              className="full-map-rail-btn full-map-rail-reopen"
+              onClick={() => setProfileOpen(true)}
+            >
+              {drawerTab === "recovery" ? <ShieldAlert size={14} /> : <Sprout size={14} />}
+              <span>{drawerTab === "recovery" ? "Open Recovery" : "Open Advisory"}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className={`full-map-rail-btn ${heatmap === "none" ? "is-active" : ""}`}
+            aria-pressed={heatmap === "none"}
+            onClick={() => setHeatmap("none")}
+          >
+            <Globe size={14} />
+            <span>Field View</span>
+          </button>
+          <button
+            type="button"
+            className={`full-map-rail-btn ${heatmap === "soil_moisture" ? "is-active" : ""}`}
+            aria-pressed={heatmap === "soil_moisture"}
+            onClick={() => setHeatmap("soil_moisture")}
+          >
+            <Droplets size={14} className="text-sky-600" />
+            <span>Soil Moisture</span>
+          </button>
+          <button
+            type="button"
+            className={`full-map-rail-btn ${heatmap === "ndvi" ? "is-active" : ""}`}
+            aria-pressed={heatmap === "ndvi"}
+            onClick={() => setHeatmap("ndvi")}
+          >
+            <Activity size={14} className="text-emerald-600" />
+            <span>Plant Health</span>
+          </button>
+          <button
+            type="button"
+            className={`full-map-rail-btn ${heatmap === "lst" ? "is-active" : ""}`}
+            aria-pressed={heatmap === "lst"}
+            onClick={() => setHeatmap("lst")}
+          >
+            <ThermometerSun size={14} className="text-amber-600" />
+            <span>Ground Heat</span>
+          </button>
+        </div>
+      )}
+
+      {/* Bottom-left legend HUD */}
+      {!drawing && (
+        <div
+          className={`full-map-bottom-hud ${
+            !drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block"
+              ? "is-shifted"
+              : ""
+          }`}
+          aria-label="Map legend"
+        >
           <div className="full-map-legend-card" role="status" aria-live="polite">
             <div className="full-map-legend-head">
               <span
@@ -2098,14 +2603,14 @@ export function FullFarmMap({
                       modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
                         ? modisNdvi.latestNdvi.toFixed(2)
                         : "loading"
-                    } for your ${farm.crop || "crop"}. Higher means greener plants.`
+                    } for your field. Higher means greener plants.`
                   : heatmap === "lst"
                     ? `Ground temperature is ${
                         surfaceTemp !== null ? `${surfaceTemp.toFixed(1)}°C` : "loading"
                       }. Shows how warm the soil surface is.`
                     : `Showing your farm boundary${
                         farm.place && farm.place !== "Location not identified" ? ` in ${farm.place}` : ""
-                      }. Tap a button below to check soil moisture or plant health.`}
+                      }. Tap a layer on the left to check soil moisture or plant health.`}
             </p>
             {heatmap !== "none" && (
               <div className="full-map-legend-scale">
@@ -2144,44 +2649,53 @@ export function FullFarmMap({
               </div>
             )}
           </div>
+        </div>
+      )}
 
-          <div className="full-map-layer-pills" role="group" aria-label="Map view mode">
-            <button
-              type="button"
-              className={`full-map-layer-pill ${heatmap === "none" ? "is-active" : ""}`}
-              aria-pressed={heatmap === "none"}
-              onClick={() => setHeatmap("none")}
-            >
-              <Globe size={14} />
-              <span>Field View</span>
-            </button>
-            <button
-              type="button"
-              className={`full-map-layer-pill ${heatmap === "soil_moisture" ? "is-active" : ""}`}
-              aria-pressed={heatmap === "soil_moisture"}
-              onClick={() => setHeatmap("soil_moisture")}
-            >
-              <Droplets size={14} className="text-sky-600" />
-              <span>Soil Moisture</span>
-            </button>
-            <button
-              type="button"
-              className={`full-map-layer-pill ${heatmap === "ndvi" ? "is-active" : ""}`}
-              aria-pressed={heatmap === "ndvi"}
-              onClick={() => setHeatmap("ndvi")}
-            >
-              <Activity size={14} className="text-emerald-600" />
-              <span>Plant Health</span>
-            </button>
-            <button
-              type="button"
-              className={`full-map-layer-pill ${heatmap === "lst" ? "is-active" : ""}`}
-              aria-pressed={heatmap === "lst"}
-              onClick={() => setHeatmap("lst")}
-            >
-              <ThermometerSun size={14} className="text-amber-600" />
-              <span>Ground Heat</span>
-            </button>
+      {/* Large centered Disaster Recovery modal with backdrop overlay (preserved, hidden for now) */}
+      {ENABLE_RECOVERY_MODAL && recoveryModalOpen && legacyRecoveryContent && (
+        <div
+          className="full-map-recovery-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="recovery-modal-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setRecoveryModalOpen(false);
+              onAdvisoryModeChange?.("rotation");
+            }
+          }}
+        >
+          <div className="full-map-recovery-modal">
+            <div className="full-map-recovery-modal-head">
+              <div>
+                <div className="drawer-badges-row">
+                  <span className="drawer-badge-nasa">REGIONAL DATA · DEMO ESTIMATE</span>
+                  <span className="drawer-badge-engine">Recovery Engine</span>
+                  {farm.place && farm.place !== "Location not identified" && (
+                    <span className="full-map-recovery-place">
+                      <MapPin size={11} />
+                      {farm.place}
+                    </span>
+                  )}
+                </div>
+                <h2 id="recovery-modal-title">Disaster Recovery &amp; Loss Check</h2>
+              </div>
+              <button
+                type="button"
+                className="full-map-recovery-close"
+                aria-label="Close disaster recovery modal"
+                onClick={() => {
+                  setRecoveryModalOpen(false);
+                  onAdvisoryModeChange?.("rotation");
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="full-map-recovery-modal-body">
+              {legacyRecoveryContent}
+            </div>
           </div>
         </div>
       )}
