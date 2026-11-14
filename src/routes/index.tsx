@@ -256,9 +256,19 @@ function FieldShift() {
           {page === "farm" && <FarmPage farm={farm} location={location} boundary={boundary} onBoundary={updateBoundary} onLocation={updateLocation} onUpdate={updateFarm} onContinue={() => goTo("prevention")} />}
           <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
           {page === "prevention" && <>
-            <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
+            <PreventionPage farm={farm} historical={historical} scenario={scenario} setScenario={(next) => { setScenario(next); setHistorical(null); }} rotations={rotations} selected={selectedRotation} setSelected={setSelectedRotation} onEvidence={(id) => { setEvidenceRotation(id); setEvidenceOpen(true); }} onChat={() => goTo("chat")} onEvidencePage={() => goTo("evidence")} />
             {historical && <div className="note-strip"><ShieldCheck size={16} /><span>Applied historical rainfall records ({historical.start} to {historical.end}) to water calculation.</span><button onClick={() => setHistorical(null)}>Clear</button></div>}
-            <PreventionPage farm={farm} historical={historical} scenario={scenario} setScenario={(next) => { setScenario(next); setHistorical(null); }} rotations={rotations} selected={selectedRotation} setSelected={setSelectedRotation} onEvidence={(id) => { setEvidenceRotation(id); setEvidenceOpen(true); }} onChat={() => goTo("chat")} onEvidencePage={() => goTo("evidence")} /></>}
+            <section className="historical-weather-drawer">
+              <div className="section-title-row">
+                <div>
+                  <span className="eyebrow"><CloudSun size={13} /> CLIMATE & WEATHER HISTORY</span>
+                  <h2>Monthly Rainfall & Temperature Records</h2>
+                  <p>Historical weather records for your farm coordinates to cross-reference seasonal water availability.</p>
+                </div>
+              </div>
+              <HistoricalWeatherPanel location={location} onUse={setHistorical} monthlyCharts />
+            </section>
+          </>}
           {page === "recovery" && <RecoveryPage farm={farm} hazard={hazard} setHazard={changeHazard} damageDate={damageDate} setDamageDate={setDamageDate} affected={affected} setAffected={setAffected} yieldLoss={yieldLoss} setYieldLoss={setYieldLoss} price={price} setPrice={setPrice} expectedYield={expectedYield} setExpectedYield={setExpectedYield} validLossInputs={validLossInputs} onUpdateFarm={updateFarm} location={location} photo={photo} pickPhoto={pickPhoto} uploadRef={uploadRef} loss={loss} onPlan={() => goTo("prevention")} onChat={() => goTo("chat")} />}
           {page === "evidence" && <EvidencePage rotations={rotations} scenario={scenario} selected={evidenceRotation} setSelected={setEvidenceRotation} onChat={() => goTo("chat")} />}
           {page === "chat" && <ChatPage farm={farm} messages={chatMessages} input={chatInput} setInput={setChatInput} onSend={sendQuestion} onSuggestion={sendQuestion} scenario={scenario} rotation={activeRotation.name} hazard={hazard} loss={lossLabel} />}
@@ -411,6 +421,15 @@ function FarmPage({ farm, location, boundary, onBoundary, onLocation, onUpdate, 
   </div>;
 }
 
+const CROP_ICONS: Record<string, string> = {
+  Corn: "🌽",
+  Mungbean: "🌱",
+  Sorghum: "🌾",
+  "Sweet potato": "🍠",
+  Cassava: "🥔",
+  Rice: "🌾",
+};
+
 function PreventionPage({
   farm,
   historical: _historical,
@@ -506,9 +525,12 @@ function PreventionPage({
                 <div className="crop-sequence-chips" aria-label="Crop sequence order">
                   {rotation.sequence.map((crop, cIdx) => (
                     <span key={crop} className="crop-seq-step">
-                      <span className="crop-seq-pill">{crop}</span>
+                      <span className="crop-seq-pill">
+                        <span className="crop-emoji" aria-hidden="true">{CROP_ICONS[crop] || "🌱"}</span>
+                        {crop}
+                      </span>
                       {cIdx < rotation.sequence.length - 1 && (
-                        <span className="crop-seq-next">→</span>
+                        <span className="crop-seq-next" aria-hidden="true">→</span>
                       )}
                     </span>
                   ))}
@@ -516,38 +538,55 @@ function PreventionPage({
 
                 <p className="rotation-note">{rotation.note}</p>
 
-                {research && (
-                  <div className="rotation-rationale">
-                    <Sprout size={16} />
-                    <span>{research.rationale}</span>
-                  </div>
-                )}
-
-                {rotation.id === "root-crop" && farm.drainage && farm.drainage !== "Good" && (
-                  <div className="rotation-caution-badge">
-                    <strong>Drainage note:</strong> Current field drainage is {farm.drainage}. Sweet potato requires well-drained soil to avoid root rot.
-                  </div>
-                )}
-
                 <div className="rotation-score">
-                  <span className="score-number">
-                    {rotation.total}
-                    <small> / 100</small>
-                  </span>
+                  <div className="score-badge-wrap">
+                    <span className="score-number">
+                      {rotation.total}
+                      <small> / 100</small>
+                    </span>
+                    <span className="score-label">MATCH SCORE</span>
+                  </div>
                   <ScoreRing score={rotation.total} />
                   <div className="rotation-rank-caption">
-                    {index === 0 ? "TOP RATING" : "SUITABLE PLAN"}
+                    {index === 0 ? "★ TOP MATCH FOR YOUR FIELD" : "SUITABLE ROTATION"}
                   </div>
                 </div>
 
-                <ScoreBreakdown scores={rotation.scores} />
+                <details className="rotation-factors-details" open={index === 0}>
+                  <summary className="factors-toggle-summary">
+                    <span>Scoring factors & agronomy breakdown</span>
+                    <ChevronDown size={15} className="factors-chevron" />
+                  </summary>
+                  <div className="factors-detail-panel">
+                    <ScoreBreakdown scores={rotation.scores} />
+                    {research && (
+                      <div className="rotation-rationale">
+                        <Sprout size={16} />
+                        <span>{research.rationale}</span>
+                      </div>
+                    )}
+                    {rotation.id === "root-crop" && farm.drainage && farm.drainage !== "Good" && (
+                      <div className="rotation-caution-badge">
+                        <strong>Drainage note:</strong> Current field drainage is {farm.drainage}. Sweet potato requires well-drained soil to avoid root rot.
+                      </div>
+                    )}
+                  </div>
+                </details>
 
                 <div className="rotation-actions">
+                  <Button
+                    variant={selected === rotation.id ? "default" : "outline"}
+                    size="sm"
+                    className={selected === rotation.id ? "plan-selected-btn" : ""}
+                    onClick={() => setSelected(rotation.id)}
+                  >
+                    {selected === rotation.id ? <><Check size={14} /> Selected</> : "Select Plan"}
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => onEvidence(rotation.id)}>
-                    <FileText size={14} /> View Details
+                    <FileText size={14} /> Details
                   </Button>
                   <Button variant="ghost" size="sm" onClick={onChat}>
-                    <MessageCircle size={14} /> Ask Advisor
+                    <MessageCircle size={14} /> Advisor
                   </Button>
                 </div>
               </article>
