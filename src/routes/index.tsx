@@ -266,6 +266,12 @@ function FieldShift() {
       </aside>
 
       <main className="main-area">
+        <header className="topbar">
+          <div className="user-chip">
+            <span className="user-avatar">B</span>
+            <span className="user-name">Bukidnon grower</span>
+          </div>
+        </header>
         <div className="page-wrap">
           <div className="page-intro">
             <div>

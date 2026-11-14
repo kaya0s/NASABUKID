@@ -208,17 +208,10 @@
   .sidebar-help,.sidebar-close { display: grid; place-items: center; border: 0; background: transparent; color: oklch(0.8 0.025 146); cursor: pointer; }
   .sidebar-close { display: none; }
   .main-area { flex: 1; width: 100%; min-width: 0; }
-  .topbar { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--card); }
-  .topbar-left,.topbar-right { display: flex; align-items: center; gap: 10px; }
-  .crumb,.nav-section { color: var(--muted-foreground); }
-  .crumb { font-size: 11px; font-weight: 700; letter-spacing: .08em; }
-  .crumb-divider { color: var(--border); }
-  .crumb-current { color: var(--foreground); font-size: 13px; font-weight: 600; }
-  .demo-label { display: inline-flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 10px; border: 1px solid oklch(0.87 0.045 75); border-radius: 4px; background: var(--warm); color: oklch(0.48 0.08 65); font-size: 11px; font-weight: 700; letter-spacing: .05em; }
-  .demo-label .demo-dot { width: 7px; height: 7px; background: oklch(0.66 0.12 78); }
-  .user-chip { display: flex; align-items: center; gap: 8px; padding-left: 12px; border-left: 1px solid var(--border); color: var(--muted-foreground); }
-  .user-avatar { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--mint); color: var(--primary); font-size: 12px; font-weight: 700; }
-  .user-name { color: var(--foreground); font-size: 12px; font-weight: 500; }
+  .topbar { height: 52px; display: flex; align-items: center; justify-content: flex-end; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--card); }
+  .user-chip { display: inline-flex; align-items: center; gap: 9px; border: 0; padding: 0; color: var(--foreground); }
+  .user-avatar { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--mint); color: var(--primary); font-size: 13px; font-weight: 700; }
+  .user-name { color: var(--foreground); font-size: 13px; font-weight: 600; }
   .page-wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding: 24px 28px 24px; }
 
   /* Floating Bottom Navigation Dock (White background, no gradient - Hidden on desktop) */
@@ -823,7 +816,7 @@
   .page-wrap { padding: 12px 14px 96px !important; }
   .topbar { height: 48px; padding: 0 12px; }
   .demo-label { min-height: 24px; padding: 0 7px; font-size: 10px; font-weight: 700; }
-  .user-name,.user-chip > svg { display: none; }
+  .user-chip > svg { display: none; }
   .user-chip { padding-left: 8px; }
   .crumb { font-size: 10px; }
   .crumb-current { max-width: 120px; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
