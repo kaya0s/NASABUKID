@@ -33,15 +33,16 @@ import {
   ImagePlus,
   Layers,
   Leaf,
-  Map,
+  Map as MapIcon,
   MapPin,
   Menu,
   MessageCircle,
-  Mountain,
+  LogOut,
   Plus,
   RotateCcw,
   Send,
   ShieldCheck,
+  Sparkles,
   Sprout,
   Sun,
   Thermometer,
@@ -53,6 +54,7 @@ import {
 } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import floodCorn from "@/assets/sample-flooded-corn.jpg";
+import heroFarmland from "@/assets/hero-farmland.jpg";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -90,7 +92,7 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "FieldShift AI | Climate-Ready Crop Planning" },
+      { title: "NASABUKID | Climate-Ready Crop Planning" },
       {
         name: "description",
         content:
@@ -98,7 +100,7 @@ export const Route = createFileRoute("/")({
       },
       {
         property: "og:title",
-        content: "FieldShift AI | Climate-Ready Crop Planning",
+        content: "NASABUKID | Climate-Ready Crop Planning",
       },
       {
         property: "og:description",
@@ -112,7 +114,15 @@ export const Route = createFileRoute("/")({
   component: FieldShift,
 });
 
-type Page = "overview" | "farm" | "fullmap" | "prevention" | "recovery" | "evidence" | "chat";
+type Page =
+  | "landing"
+  | "overview"
+  | "farm"
+  | "fullmap"
+  | "prevention"
+  | "recovery"
+  | "evidence"
+  | "chat";
 type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
 type Farm = {
   place: string;
@@ -139,7 +149,7 @@ const NAV: Array<{
 }> = [
   { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
   { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
-  { id: "fullmap", label: "Full Map (New)", icon: Map, section: "WORKSPACE" },
+  { id: "fullmap", label: "Full Map (New)", icon: MapIcon, section: "WORKSPACE" },
   {
     id: "prevention",
     label: "Crop planning",
@@ -183,6 +193,20 @@ const SUGGESTED_QUESTIONS = [
   "What changes in a dry season?",
   "How was my loss estimate calculated?",
 ];
+const SUGGESTIONS_BY_WORKFLOW = {
+  prevention: [
+    "Why plant a legume after corn?",
+    "What changes in a dry season?",
+    "How do crop rotations protect soil?",
+    "Which crops handle wet conditions best?",
+  ],
+  recovery: [
+    "How was my loss estimate calculated?",
+    "What should I do right after floodwaters recede?",
+    "Can surviving corn still produce grain?",
+    "What fast-growing replanting options work?",
+  ],
+};
 const SEED_FARM: Farm = {
   place: "Location not identified",
   area: "4.2",
@@ -267,7 +291,7 @@ function FieldShift() {
   const [growthStage, setGrowthStage] = useState("");
   const [durationHours, setDurationHours] = useState("");
   const [observations, setObservations] = useState("");
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>("landing");
   const [farm, setFarm] = useState<Farm>(SEED_FARM);
   const [stored, setStored] = useState(false);
   const [location, setLocation] = useState<Coordinates>({
@@ -303,7 +327,7 @@ function FieldShift() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "Hi there. I’m your FieldShift demo advisor. I can walk through this sample plan, farm profile, or recovery estimate. What would you like to explore?",
+      text: "Hi there. I’m your NASABUKID demo advisor. I can walk through this mock data plan, farm profile, or recovery estimate. What would you like to explore?",
     },
   ]);
   const [chatBusy, setChatBusy] = useState(false);
@@ -644,6 +668,7 @@ function FieldShift() {
   }
 
   const pageTitle: Record<Page, string> = {
+    landing: "Welcome to NASABUKID",
     overview: "Overview",
     farm: "My farm",
     fullmap: "Full Map (New)",
@@ -653,16 +678,37 @@ function FieldShift() {
     chat: "Field advisor",
   };
 
+  if (page === "landing") {
+    return (
+      <LandingPage
+        onLaunch={() => goTo("overview")}
+        onNavigate={(targetPage) => goTo(targetPage)}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-hidden={isMobile ? "true" : undefined}>
-        <div className="brand">
+        <div
+          className="brand brand-clickable"
+          onClick={() => goTo("landing")}
+          role="button"
+          tabIndex={0}
+          title="Return to Home"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              goTo("landing");
+            }
+          }}
+        >
           <div className="brand-mark">
             <Sprout size={21} strokeWidth={1.8} />
           </div>
           <div>
             <span className="brand-name">
-              fieldshift<span className="brand-ai">ai</span>
+              <span className="brand-nasa">NASA</span><span className="brand-bukid">BUKID</span>
             </span>
             <span className="brand-caption">GROW WITH CONFIDENCE</span>
           </div>
@@ -699,20 +745,14 @@ function FieldShift() {
           })}
         </nav>
         <div className="sidebar-foot">
-          <div className="guide-avatar">
-            <Mountain size={17} />
-          </div>
-          <div>
-            <span>BUKIDNON FIELD GUIDE</span>
-            <strong>Farmer-first, season-ready.</strong>
-          </div>
           <button
-            className="sidebar-help"
-            title="Get friendly, sample-based planning guidance"
-            aria-label="Get field guidance"
-            onClick={() => goTo("chat")}
+            type="button"
+            className="sidebar-logout-btn"
+            onClick={() => goTo("landing")}
+            title="Log out and return to landing page"
           >
-            <CircleHelp size={17} />
+            <LogOut size={16} strokeWidth={1.8} />
+            <span>Log out</span>
           </button>
         </div>
       </aside>
@@ -742,15 +782,13 @@ function FieldShift() {
           />
         ) : (
         <div className="page-wrap">
-          <div className="page-intro">
-            <div>
-              {page !== "overview" && (
+          {page !== "overview" && page !== "chat" && (
+            <div className="page-intro">
+              <div>
                 <span className="eyebrow">
                   <MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}
                 </span>
-              )}
-              <h1>{pageTitle[page]}</h1>
-              {page !== "overview" && (
+                <h1>{pageTitle[page]}</h1>
                 <p className="intro-copy">
                   {page === "farm"
                     ? "Set your location, boundary, and field details for customized recommendations."
@@ -760,23 +798,23 @@ function FieldShift() {
                         ? "Estimate potential crop loss and planning next steps."
                         : page === "evidence"
                           ? "Methodology and data sources behind rotation scores."
-                          : page === "chat"
-                            ? "Ask questions about your sample field plan."
-                            : ""}
+                          : ""}
                 </p>
-              )}
-            </div>
-            {page !== "overview" && (
+              </div>
               <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}>
                 <ArrowLeft size={16} /> Overview
               </Button>
-            )}
-          </div>
+            </div>
+          )}
 
           {page === "overview" && (
             <OverviewPage
               farm={farm}
+              boundary={boundary}
               location={location}
+              scenario={scenario}
+              rotationName={activeRotation.name}
+              hazard={hazard}
               onLocationFound={(coords) => {
                 updateLocation(coords);
               }}
@@ -955,32 +993,21 @@ function FieldShift() {
             />
           )}
           {page === "chat" && (
-            <>
-              <div className="form-field">
-                <Label htmlFor="advisor-workflow">Advice focus</Label>
-                <select
-                  id="advisor-workflow"
-                  value={advisorWorkflow}
-                  onChange={(e) => setAdvisorWorkflow(e.target.value as "recovery" | "prevention")}
-                >
-                  <option value="recovery">Damage recovery</option>
-                  <option value="prevention">Crop planning</option>
-                </select>
-              </div>
-              <ChatPage
-                farm={farm}
-                messages={chatMessages}
-                busy={chatBusy}
-                input={chatInput}
-                setInput={setChatInput}
-                onSend={sendQuestion}
-                onSuggestion={sendQuestion}
-                scenario={scenario}
-                rotation={activeRotation.name}
-                hazard={hazard}
-                loss={lossLabel}
-              />
-            </>
+            <ChatPage
+              farm={farm}
+              messages={chatMessages}
+              busy={chatBusy}
+              input={chatInput}
+              setInput={setChatInput}
+              onSend={sendQuestion}
+              onSuggestion={sendQuestion}
+              scenario={scenario}
+              rotation={activeRotation.name}
+              hazard={hazard}
+              loss={lossLabel}
+              advisorWorkflow={advisorWorkflow}
+              setAdvisorWorkflow={setAdvisorWorkflow}
+            />
           )}
 
           {SHOW_API_SOURCES && <ApiSources />}
@@ -990,7 +1017,7 @@ function FieldShift() {
             </span>
             {SHOW_FOOTER_NASA_INFO && (
               <span>
-                FieldShift AI <span className="footer-divider">·</span> NASA Space Apps demo{" "}
+                NASABUKID <span className="footer-divider">·</span> NASA Space Apps demo{" "}
                 <span className="footer-divider">·</span> Historical NASA access · Demo scores ·
                 Gemini advisor
               </span>
@@ -1083,116 +1110,456 @@ function FieldShift() {
   );
 }
 
+function LandingPage({
+  onLaunch,
+  onNavigate,
+}: {
+  onLaunch: () => void;
+  onNavigate: (page: Page) => void;
+}) {
+  return (
+    <div className="landing-root">
+      {/* Top Navigation */}
+      <header className="landing-header">
+        <div className="landing-header-inner">
+          <div
+            className="landing-brand"
+            onClick={onLaunch}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onLaunch();
+              }
+            }}
+          >
+            <div className="brand-mark">
+              <Sprout size={20} strokeWidth={2} />
+            </div>
+            <span className="brand-name">
+              <span className="brand-nasa">NASA</span><span className="brand-bukid">BUKID</span>
+            </span>
+          </div>
+
+          <nav className="landing-nav-links" aria-label="Landing navigation">
+            <button
+              type="button"
+              className="landing-nav-link"
+              onClick={() => onNavigate("farm")}
+            >
+              My farm
+            </button>
+            <button
+              type="button"
+              className="landing-nav-link"
+              onClick={() => onNavigate("prevention")}
+            >
+              Crop planning
+            </button>
+            <button
+              type="button"
+              className="landing-nav-link"
+              onClick={() => onNavigate("recovery")}
+            >
+              Damage recovery
+            </button>
+            <button
+              type="button"
+              className="landing-nav-link"
+              onClick={() => onNavigate("chat")}
+            >
+              Field advisor
+            </button>
+          </nav>
+
+          <div className="landing-header-actions">
+            <Button className="landing-launch-btn" onClick={onLaunch}>
+              <span>Launch Field Desk</span>
+              <ArrowRight size={15} />
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section
+        className="landing-hero-section landing-hero-photo"
+        style={{ backgroundImage: `url(${heroFarmland})` }}
+      >
+        <div className="landing-hero-content">
+          <div className="landing-badge">
+            <span className="landing-badge-dot" />
+            <Sparkles size={13} />
+            <span>NASA Space Apps Challenge 2026 · Bukidnon Agriculture</span>
+          </div>
+
+          <h1 className="landing-hero-title">
+            Space Data for Grounded Farming.
+          </h1>
+
+          <p className="landing-hero-subtitle">
+            Harness NASA satellite earth observations, 30+ years of solar and precipitation records,
+            and climate-ready crop rotation intelligence to safeguard Bukidnon yields through droughts,
+            floods, and changing seasons.
+          </p>
+
+          <div className="landing-hero-ctas">
+            <Button size="lg" className="landing-cta-primary" onClick={onLaunch}>
+              <span>Explore Field Desk</span>
+              <ArrowRight size={17} />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="landing-cta-secondary"
+              onClick={() => onNavigate("prevention")}
+            >
+              <Wheat size={17} />
+              <span>Plan Crop Rotations</span>
+            </Button>
+            <Button
+              size="lg"
+              variant="ghost"
+              className="landing-cta-ghost"
+              onClick={() => onNavigate("chat")}
+            >
+              <MessageCircle size={17} />
+              <span>Ask Field Advisor</span>
+            </Button>
+          </div>
+
+          {/* Social Proof / Key Highlights */}
+          <div className="landing-hero-metrics">
+            <div className="landing-metric-card">
+              <strong>30+ Years</strong>
+              <span>NASA POWER Satellite Records</span>
+            </div>
+            <div className="landing-metric-card">
+              <strong>4 Scenarios</strong>
+              <span>El Niño, Heavy Rain & Typical</span>
+            </div>
+            <div className="landing-metric-card">
+              <strong>Bukidnon-First</strong>
+              <span>Calibrated Upland Soil & Crops</span>
+            </div>
+            <div className="landing-metric-card">
+              <strong>AI Guided</strong>
+              <span>Season-Ready Agronomic Advice</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Hero Interactive Preview Card */}
+        <div className="landing-hero-preview">
+          <div className="hero-preview-window">
+            <div className="hero-preview-topbar">
+              <span className="window-dot red" />
+              <span className="window-dot yellow" />
+              <span className="window-dot green" />
+              <span className="window-title">NASABUKID Active Intelligence · Bukidnon, Philippines</span>
+            </div>
+            <div className="hero-preview-body">
+              <div className="hero-preview-weather-card">
+                <div className="preview-weather-head">
+                  <div>
+                    <span className="preview-location"><MapPin size={12} /> Bukidnon, Philippines</span>
+                    <strong className="preview-temp">26°C</strong>
+                  </div>
+                  <CloudSun size={36} className="preview-weather-icon" />
+                </div>
+                <div className="preview-weather-stats">
+                  <div><small>HUMIDITY</small><strong>86%</strong></div>
+                  <div><small>PRECIPITATION</small><strong>0 mm</strong></div>
+                  <div><small>WIND</small><strong>3 km/h</strong></div>
+                </div>
+              </div>
+
+              <div className="hero-preview-rotation-card">
+                <div className="preview-rotation-badge">
+                  <Sparkles size={12} /> RECOMMENDED ROTATION
+                </div>
+                <h3>Corn → Mungbean → Sorghum</h3>
+                <p>Nitrogen-fixing legume breaks pest cycles while drought-hardy sorghum secures food security in late season.</p>
+                <div className="preview-rotation-footer">
+                  <span className="preview-score-pill">Demo Score: 88 / 100</span>
+                  <button type="button" className="preview-link-btn" onClick={() => onNavigate("prevention")}>
+                    Inspect Model <ArrowRight size={13} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Core Features Bento Grid */}
+      <section className="landing-features-section">
+        <div className="landing-section-head">
+          <span className="section-eyebrow">BUILT FOR BUKIDNON GROWERS</span>
+          <h2>Intelligent tools for resilient agriculture</h2>
+          <p>Designed around real field challenges—from unpredictable typhoons to severe dry spells.</p>
+        </div>
+
+        <div className="landing-features-grid">
+          <div className="landing-feature-card">
+            <div className="feature-card-icon map-icon">
+              <MapIcon size={24} />
+            </div>
+            <span className="feature-category">SATELLITE & BOUNDARIES</span>
+            <h3>Interactive Farm Mapping</h3>
+            <p>Pinpoint your coordinates in Bukidnon or draw your precise field polygon to calculate area and query local satellite history.</p>
+            <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("farm")}>
+              <span>Set Farm Boundary</span>
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+
+          <div className="landing-feature-card featured-card">
+            <div className="feature-card-icon crop-icon">
+              <Wheat size={24} />
+            </div>
+            <span className="feature-category">CLIMATE ADAPTATION</span>
+            <h3>Climate-Ready Rotations</h3>
+            <p>Compare diversified 3-crop sequences evaluated across El Niño droughts and heavy rainfall patterns to protect soil organic matter.</p>
+            <Button className="feature-card-btn primary" onClick={() => onNavigate("prevention")}>
+              <span>Compare Rotations</span>
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+
+          <div className="landing-feature-card">
+            <div className="feature-card-icon recovery-icon">
+              <HeartHandshake size={24} />
+            </div>
+            <span className="feature-category">POST-HAZARD RESPONSE</span>
+            <h3>Rapid Loss & Replanting</h3>
+            <p>Assess crop loss after floods or typhoons with transparent gross revenue calculations, replanting timelines, and salvage guidance.</p>
+            <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("recovery")}>
+              <span>Calculate Loss</span>
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+
+          <div className="landing-feature-card">
+            <div className="feature-card-icon advisor-icon">
+              <MessageCircle size={24} />
+            </div>
+            <span className="feature-category">DEMO AI ASSISTANT</span>
+            <h3>AI Field Advisor</h3>
+            <p>Receive conversational, field-aware agronomic guidance powered by Gemini, grounded in your active farm context and scenario data.</p>
+            <Button variant="outline" className="feature-card-btn" onClick={() => onNavigate("chat")}>
+              <span>Ask Field Guide</span>
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* How it Works Section */}
+      <section className="landing-steps-section">
+        <div className="landing-section-head">
+          <span className="section-eyebrow">SIMPLE 3-STEP WORKFLOW</span>
+          <h2>How NASABUKID powers your season</h2>
+        </div>
+
+        <div className="landing-steps-grid">
+          <div className="landing-step-card">
+            <div className="step-number">01</div>
+            <h4>Identify Your Field</h4>
+            <p>Select your Bukidnon farm location and boundary to load satellite rainfall and solar data.</p>
+          </div>
+          <div className="landing-step-card">
+            <div className="step-number">02</div>
+            <h4>Test Climate Scenarios</h4>
+            <p>Simulate upcoming dry spells, typhoons, or wet seasons against proven crop sequences.</p>
+          </div>
+          <div className="landing-step-card">
+            <div className="step-number">03</div>
+            <h4>Execute with Clarity</h4>
+            <p>Replant with confidence, track recovery economics, and consult your dedicated Field Guide.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Final Call to Action */}
+      <section className="landing-cta-banner">
+        <div className="cta-banner-card">
+          <div className="cta-banner-content">
+            <Sprout size={32} className="cta-sprout-icon" />
+            <h2>Ready to prepare your farm for the seasons ahead?</h2>
+            <p>Explore climate-smart crop rotations, satellite observations, and demo agronomy tools for Bukidnon.</p>
+            <Button size="lg" className="cta-banner-btn" onClick={onLaunch}>
+              <span>Open NASABUKID Field Desk</span>
+              <ArrowRight size={18} />
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Landing Footer */}
+      <footer className="landing-footer">
+        <div className="landing-footer-inner">
+          <div className="landing-footer-brand">
+            <span className="brand-name">
+              <span className="brand-nasa">NASA</span><span className="brand-bukid">BUKID</span>
+            </span>
+            <p>Climate-ready crop planning and recovery intelligence for Bukidnon, Philippines.</p>
+          </div>
+          <div className="landing-footer-meta">
+            <span>NASA Space Apps Challenge 2026 demo</span>
+            <span>Historical NASA POWER satellite access · Demo calculations · Gemini advisor</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function formatFarmDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return new Intl.DateTimeFormat("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 function OverviewPage({
-  farm: _farm,
+  farm,
+  boundary,
   location,
+  scenario,
+  rotationName,
+  hazard,
   onLocationFound,
-  onPlan: _onPlan,
+  onPlan,
   onRecover,
   onPrevention,
   onChat,
 }: {
   farm: Farm;
+  boundary: Coordinates[];
   location: Coordinates;
+  scenario: ClimateScenario;
+  rotationName?: string;
+  hazard: Hazard;
   onLocationFound: (coords: Coordinates) => void;
   onPlan: () => void;
   onRecover: () => void;
   onPrevention: () => void;
   onChat: () => void;
 }) {
+  const locationKnown = Boolean(farm.place) && farm.place !== "Location not identified";
+  const plantingDate = formatFarmDate(farm.planted);
+  const notes = [
+    !locationKnown ? "Location not identified yet. Pick your farm point on the map." : null,
+    !boundary.length ? "Area is entered manually. Draw a boundary for an exact measure." : null,
+    !plantingDate ? "Add a planned planting date to compare seasons." : null,
+  ].filter((note): note is string => Boolean(note));
+
   return (
     <div className="agri-overview-container">
-      {/* Top Agricultural Weather & Greeting Banner */}
-      <OverviewWeatherWidget location={location} onLocationFound={onLocationFound} />
+      <OverviewWeatherWidget
+        location={location}
+        placeName={farm.place}
+        onLocationFound={onLocationFound}
+        onOpenFarm={onPlan}
+      />
 
-      {/* Quick Actions Row */}
-      <div className="agri-quick-actions">
-        <Button size="lg" className="agri-btn-primary" onClick={onPrevention}>
-          <Wheat size={18} /> Plan My Crops
-        </Button>
-        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
-          <MessageCircle size={18} /> Ask Advisor
-        </Button>
-      </div>
-
-      {/* Modern Visual Cards with Images & Bookmarks */}
-      <div className="agri-cards-scroller">
-        <article
-          className="agri-field-card"
-          onClick={onPrevention}
-          tabIndex={0}
-          role="button"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onPrevention();
-            }
-          }}
-        >
-          <div className="agri-card-media">
-            <img src={bukidnonFields} alt="Bukidnon crop planning field" />
-            <button
-              type="button"
-              className="agri-bookmark-btn"
-              aria-label="Crop Planning"
-              onClick={(e) => {
-                e.stopPropagation();
-                onPrevention();
-              }}
-            >
-              <Sprout size={16} />
-            </button>
+      <section className="overview-field panel" aria-labelledby="overview-field-heading">
+        <div className="overview-section-head">
+          <div>
+            <span className="panel-eyebrow">
+              <Sprout size={13} aria-hidden="true" /> YOUR FIELD
+            </span>
+            <h2 id="overview-field-heading">Field profile</h2>
           </div>
-          <div className="agri-card-info">
-            <h3>Optimize Crop Harvest</h3>
-            <p>Compare crop rotation sequences for upcoming dry or wet seasons.</p>
-            <div className="agri-card-foot">
-              <span className="agri-tag">Crop Planning</span>
-              <span className="agri-action-arrow">
-                <ArrowRight size={15} />
+          <Button variant="outline" onClick={onPlan}>
+            Open My Farm <ArrowRight size={15} aria-hidden="true" />
+          </Button>
+        </div>
+        <dl className="overview-field-facts">
+          <div>
+            <dt>Location</dt>
+            <dd>{locationKnown ? farm.place : "Not identified"}</dd>
+          </div>
+          <div>
+            <dt>Area</dt>
+            <dd>
+              {farm.area ? `${farm.area} ha` : "Not set"}
+              <small>{boundary.length ? "measured" : "manual"}</small>
+            </dd>
+          </div>
+          <div>
+            <dt>Current crop</dt>
+            <dd>{farm.crop || "Not set"}</dd>
+          </div>
+          <div>
+            <dt>Next planting</dt>
+            <dd>{plantingDate ?? "Not set"}</dd>
+          </div>
+        </dl>
+        {notes.length > 0 && (
+          <p className="overview-field-note">
+            <CircleHelp size={15} aria-hidden="true" />
+            <span>{notes.join(" ")}</span>
+          </p>
+        )}
+      </section>
+
+      <section className="overview-tools" aria-labelledby="overview-tools-heading">
+        <div className="overview-section-head">
+          <div>
+            <span className="panel-eyebrow">
+              <Wheat size={13} aria-hidden="true" /> FARM TOOLS
+            </span>
+            <h2 id="overview-tools-heading">What do you need today?</h2>
+          </div>
+          <button type="button" className="overview-link-btn" onClick={onChat}>
+            Ask the field advisor <ArrowUpRight size={15} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="agri-cards-scroller">
+          <button type="button" className="agri-field-card" onClick={onPrevention}>
+            <span className="agri-card-media">
+              <img src={bukidnonFields} alt="" />
+            </span>
+            <span className="agri-card-info">
+              <span className="agri-card-kicker">CROP PLANNING · {scenario}</span>
+              <strong className="agri-card-title">Compare next-season rotations</strong>
+              <span className="agri-card-copy">
+                Five demo rotations scored on water, soil, income, and resilience.
               </span>
-            </div>
-          </div>
-        </article>
-
-        <article
-          className="agri-field-card"
-          onClick={onRecover}
-          tabIndex={0}
-          role="button"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onRecover();
-            }
-          }}
-        >
-          <div className="agri-card-media">
-            <img src={floodCorn} alt="Damage check field in Bukidnon" />
-            <button
-              type="button"
-              className="agri-bookmark-btn"
-              aria-label="Damage Assessment"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRecover();
-              }}
-            >
-              <HeartHandshake size={16} />
-            </button>
-          </div>
-          <div className="agri-card-info">
-            <h3>Field Damage Check</h3>
-            <p>Calculate weather loss and evaluate stand recovery after storms.</p>
-            <div className="agri-card-foot">
-              <span className="agri-tag tag-coral">Damage Assessment</span>
-              <span className="agri-action-arrow">
-                <ArrowRight size={15} />
+              <span className="agri-card-foot">
+                <span>{rotationName ? `Last viewed · ${rotationName}` : "Open crop planning"}</span>
+                <ArrowRight size={16} aria-hidden="true" />
               </span>
-            </div>
-          </div>
-        </article>
-      </div>
+            </span>
+          </button>
+
+          <button type="button" className="agri-field-card" onClick={onRecover}>
+            <span className="agri-card-media">
+              <img src={floodCorn} alt="" />
+            </span>
+            <span className="agri-card-info">
+              <span className="agri-card-kicker">DAMAGE RECOVERY · {hazard}</span>
+              <strong className="agri-card-title">Estimate storm damage</strong>
+              <span className="agri-card-copy">
+                Work out crop loss from rainfall and field reports, then plan the next step.
+              </span>
+              <span className="agri-card-foot">
+                <span>Open damage check</span>
+                <ArrowRight size={16} aria-hidden="true" />
+              </span>
+            </span>
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2087,6 +2454,7 @@ function EvidencePage({
   onChat: () => void;
 }) {
   const current = rotations.find((rotation) => rotation.id === selected) ?? rotations[0]!;
+  const rank = rotations.findIndex((rotation) => rotation.id === current.id);
   return (
     <div className="evidence-page">
       <div className="panel evidence-overview">
@@ -2099,11 +2467,10 @@ function EvidencePage({
         </div>
         <div>
           <span className="eyebrow">SCORING METHODOLOGY</span>
-          <h2>Clear Agronomic Principles</h2>
+          <h2>Clear agronomic principles</h2>
           <p>
-            This planning tool combines farm context, climate patterns, and crop rotation research.
-            Rainfall and temperature charts use historical weather observations to supply seasonal
-            rainfall context for planning.
+            Rotations are compared on four weighted factors. The weather charts add historical
+            rainfall and temperature context from NASA records.
           </p>
         </div>
       </div>
@@ -2114,9 +2481,8 @@ function EvidencePage({
               <span className="panel-eyebrow">
                 <BarChart3 size={13} /> HOW ROTATIONS ARE COMPARED
               </span>
-              <h2>Four ingredients. One clear score.</h2>
+              <h2>Four weighted factors</h2>
             </div>
-            <span className="sample-chip">SCORING WEIGHTS</span>
           </div>
           <div className="weighted-rows">
             {[
@@ -2171,14 +2537,9 @@ function EvidencePage({
               </div>
             ))}
           </div>
-          <div className="formula-display">
-            <span>WEIGHTED TOTAL</span>
-            <code>(Water × .30) + (Soil × .30) + (Income × .25) + (Resilience × .15)</code>
-            <span>
-              Rounded to one decimal place <span className="footer-divider">·</span> scores range
-              from 0–100
-            </span>
-          </div>
+          <p className="evidence-footnote">
+            Every factor is scored from 0 to 100. The weighted total is rounded to one decimal.
+          </p>
         </section>
         <section className="panel evidence-score-panel">
           <div className="panel-top">
@@ -2201,123 +2562,62 @@ function EvidencePage({
               ))}
             </select>
           </div>
-          <div className="evidence-picked-rotation">
-            <Sprout size={16} /> {current.name}
-          </div>
           <div className="evidence-total-row">
             <span>
               <strong>{current.total}</strong>
               <small> / 100</small>
             </span>
             <span className="rank-pill">
-              {rotations.findIndex((r) => r.id === current.id) === 0
-                ? "HIGHEST SAMPLE SCORE"
-                : "ALTERNATIVE"}
+              Rank {rank + 1} of {rotations.length}
             </span>
           </div>
           <ScoreBreakdown scores={current.scores} showWeight />
-          <div className="score-eq-lines">
-            {Object.entries(current.scores).map(([key, value]) => (
-              <div key={key}>
-                <span>
-                  {key[0]?.toUpperCase()}
-                  {key.slice(1)}
-                </span>
-                <span>
-                  {value} ×{" "}
-                  {
-                    (
-                      {
-                        water: "30%",
-                        soil: "30%",
-                        income: "25%",
-                        resilience: "15%",
-                      } as Record<string, string>
-                    )[key]
-                  }
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="score-eq-result">
-            <span>Calculated total</span>
-            <strong>{current.total} / 100</strong>
-          </div>
         </section>
       </div>
       <section className="panel evidence-sources">
         <div className="panel-top">
           <div>
             <span className="panel-eyebrow">
-              <FileText size={13} /> INTENDED RESEARCH CONTEXT
+              <FileText size={13} /> DATA SOURCES
             </span>
-            <h2>Data sources and planned integrations.</h2>
+            <h2>Where the context comes from</h2>
           </div>
-          <span className="source-here">
-            HISTORICAL ACCESS AVAILABLE <span />
-          </span>
         </div>
         <div className="source-grid">
           {[
             {
               icon: Thermometer,
-              name: "NASA POWER Climate",
-              label: "Climate & rainfall",
-              status: "CONNECTED",
+              name: "Satellite Weather Records",
+              label: "Climate context",
               description:
-                "Recent 90-day and historical daily rainfall and temperature loaded automatically for selected Bukidnon farm coordinates.",
-            },
-            {
-              icon: Layers,
-              name: "ISRIC SoilGrids (250 m)",
-              label: "Soil pH & texture",
-              status: "CONNECTED",
-              description:
-                "Estimated topsoil pH, sand, silt, and clay percentages used for mineral/fertilizer screening and drainage flags.",
-            },
-            {
-              icon: Mountain,
-              name: "Open-Meteo Elevation & Slope",
-              label: "Terrain suitability",
-              status: "CONNECTED",
-              description:
-                "Elevation and calculated terrain slope % to flag erosion risk and areas unsuitable for intensive tillage.",
-            },
-            {
-              icon: Camera,
-              name: "Mapillary / KartaView",
-              label: "Street-level imagery",
-              status: "CONNECTED",
-              description:
-                "Free street-level photos around pinned farm landmarks when public road coverage is available.",
+                "Historical rainfall and temperature can be loaded by farm coordinates and date in crop planning and recovery.",
             },
             {
               icon: Activity,
               name: "NOAA ENSO",
-              label: "Seasonal climate signal",
-              status: "PLANNED",
+              label: "Potential climate signal",
               description:
-                "ENSO status could provide context for seasonal discussions—not a farm-specific weather forecast.",
+                "Seasonal climate signals add context to planning discussions, not a farm-level forecast.",
             },
             {
               icon: Leaf,
               name: "Crop guides",
               label: "Agronomy & rotation",
-              status: "REFERENCE",
               description:
-                "Philippine crop guides and local extension recommendations should inform real planting decisions.",
+                "Philippine crop guides and local extension advice should inform real planting decisions.",
             },
-          ].map(({ icon: Icon, name, label, status, description }) => (
+          ].map(({ icon: Icon, name, label, description }) => (
             <div className="source-item" key={name}>
               <span className="source-icon">
                 <Icon size={17} />
               </span>
               <span className="source-meta">
-                <small>{label}</small>
                 <strong>{name}</strong>
                 <span>{description}</span>
               </span>
-              <span className="source-status">{status}</span>
+              <span className="source-status">
+                {name === "Satellite Weather Records" ? "CONNECTED" : "PLANNED"}
+              </span>
             </div>
           ))}
         </div>
@@ -2351,6 +2651,8 @@ function ChatPage({
   rotation,
   hazard,
   loss,
+  advisorWorkflow,
+  setAdvisorWorkflow,
 }: {
   farm: Farm;
   messages: ChatMessage[];
@@ -2363,44 +2665,129 @@ function ChatPage({
   rotation: string;
   hazard: Hazard;
   loss: string;
+  advisorWorkflow: "recovery" | "prevention";
+  setAdvisorWorkflow: (workflow: "recovery" | "prevention") => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [messages]);
+  }, [messages, busy]);
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!input.trim() || busy) return;
     onSend();
   }
+
+  const suggestions =
+    advisorWorkflow === "recovery"
+      ? SUGGESTIONS_BY_WORKFLOW.recovery
+      : SUGGESTIONS_BY_WORKFLOW.prevention;
+
   return (
-    <div className="chat-layout">
-      <section className="panel advisor-panel">
-        <div className="advisor-head">
-          <div className="advisor-avatar">
-            <Sprout size={21} />
-          </div>
-          <div>
-            <strong>Your FieldShift guide</strong>
-            <span>
-              <span className="advisor-status-dot" /> FIELD ADVISOR{" "}
-              <span className="footer-divider">·</span> DEMO CONTEXT
+    <div className="chat-layout-stacked">
+      {/* Box 1: Picking up where you left off (4 Columns) */}
+      <section className="panel chat-context-summary-panel">
+        <div className="chat-context-summary-head">
+          <h2>Picking up where you left off.</h2>
+        </div>
+
+        <div className="chat-context-four-columns">
+          {/* Column 1 */}
+          <div className="chat-context-card">
+            <span className="context-icon">
+              <MapPin size={18} />
             </span>
+            <div className="context-card-info">
+              <small>FIELD PROFILE</small>
+              <strong>{farm.place || "Location not set"}</strong>
+              <span>
+                {farm.area} hectares · {farm.soil || "Soil unverified"}
+              </span>
+            </div>
           </div>
-          <span className="advisor-badge">
-            <Bot size={15} /> FIELD ADVISOR
-          </span>
+
+          {/* Column 2 */}
+          <div className="chat-context-card">
+            <span className="context-icon context-climate">
+              <CloudSun size={18} />
+            </span>
+            <div className="context-card-info">
+              <small>PLANNING SCENARIO</small>
+              <strong>{scenario}</strong>
+              <span>Climate scenario</span>
+            </div>
+          </div>
+
+          {/* Column 3 */}
+          <div className="chat-context-card">
+            <span className="context-icon context-crop">
+              <Flower2 size={18} />
+            </span>
+            <div className="context-card-info">
+              <small>ROTATION SEQUENCE</small>
+              <strong>{rotation}</strong>
+              <span>Crop sequence</span>
+            </div>
+          </div>
+
+          {/* Column 4 */}
+          <div className="chat-context-card">
+            <span className="context-icon context-hazard">
+              <HeartHandshake size={18} />
+            </span>
+            <div className="context-card-info">
+              <small>RECOVERY ESTIMATE</small>
+              <strong>
+                {hazard} · {loss}
+              </strong>
+              <span>Projected recovery</span>
+            </div>
+          </div>
         </div>
-        <div className="context-chips">
-          <span>
-            <MapPin size={12} /> {farm.place}
-          </span>
-          <span>
-            <CloudSun size={12} /> {scenario} scenario
-          </span>
-          <span>
-            <Sprout size={12} /> {rotation.split("→").map((crop) => crop.trim())[0]} rotation
-          </span>
+      </section>
+
+      {/* Box 2: Field Advisor (Full width of the page) */}
+      <section className="panel advisor-panel-fullwidth">
+        <div className="advisor-head">
+          <div className="advisor-identity">
+            <div className="advisor-avatar">
+              <Sprout size={24} strokeWidth={2.2} />
+            </div>
+            <div className="advisor-title-wrap">
+              <strong>Your NASABUKID guide</strong>
+              <span>
+                <span className="advisor-status-dot" />
+                AI Field Guide
+              </span>
+            </div>
+          </div>
+
+          <div className="advisor-segmented-control" role="tablist" aria-label="Advice focus">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={advisorWorkflow === "prevention"}
+              className={`advisor-seg-btn ${advisorWorkflow === "prevention" ? "advisor-seg-active" : ""}`}
+              onClick={() => setAdvisorWorkflow("prevention")}
+            >
+              <Wheat size={15} />
+              <span>Crop planning</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={advisorWorkflow === "recovery"}
+              className={`advisor-seg-btn ${advisorWorkflow === "recovery" ? "advisor-seg-active" : ""}`}
+              onClick={() => setAdvisorWorkflow("recovery")}
+            >
+              <HeartHandshake size={15} />
+              <span>Damage recovery</span>
+            </button>
+          </div>
         </div>
+
         <div className="chat-messages" aria-live="polite">
           {messages.map((message, index) => (
             <div
@@ -2408,11 +2795,17 @@ function ChatPage({
               className={`chat-row ${message.role === "user" ? "chat-row-user" : ""}`}
             >
               <span className={`chat-avatar ${message.role === "user" ? "chat-user-avatar" : ""}`}>
-                {message.role === "assistant" ? <Sprout size={16} /> : "B"}
+                {message.role === "assistant" ? <Sprout size={18} /> : "B"}
               </span>
               <div className={`chat-bubble ${message.role === "user" ? "chat-user-bubble" : ""}`}>
                 <span className="chat-role">
-                  {message.role === "assistant" ? "FIELD GUIDE" : "YOU"}
+                  {message.role === "assistant" ? (
+                    <>
+                      <Sparkles size={12} /> FIELD GUIDE
+                    </>
+                  ) : (
+                    "YOU"
+                  )}
                 </span>
                 <p>{message.text}</p>
               </div>
@@ -2421,38 +2814,49 @@ function ChatPage({
           {busy && (
             <div className="chat-row">
               <span className="chat-avatar">
-                <Sprout size={16} />
+                <Sprout size={18} />
               </span>
               <div className="chat-bubble">
-                <p>Thinking…</p>
+                <span className="chat-role">
+                  <Sparkles size={12} /> FIELD GUIDE
+                </span>
+                <div className="typing-indicator" aria-label="Advisor thinking">
+                  <span className="typing-dot" />
+                  <span className="typing-dot" />
+                  <span className="typing-dot" />
+                </div>
               </div>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
+
         <div className="suggested-questions">
-          <span className="suggestion-heading">SOME THINGS TO ASK</span>
-          <div>
-            {SUGGESTED_QUESTIONS.map((question) => (
-              <button key={question} onClick={() => onSuggestion(question)}>
-                {question}
-                <ArrowUpRight size={13} />
+          <span className="suggestion-heading">
+            <Sparkles size={13} /> SUGGESTED QUESTIONS
+          </span>
+          <div className="suggestion-chips-scroller">
+            {suggestions.map((question) => (
+              <button key={question} type="button" onClick={() => onSuggestion(question)}>
+                <span>{question}</span>
+                <ArrowUpRight size={14} />
               </button>
             ))}
           </div>
         </div>
+
         <form className="chat-input-row" onSubmit={handleSubmit}>
           <Textarea
-            aria-label="Ask the demo field advisor"
+            aria-label="Ask a question"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                onSend();
+                handleSubmit(event);
               }
             }}
-            placeholder="Ask about your sample field plan…"
+            placeholder="Ask a question..."
             rows={1}
             maxLength={1200}
           />
@@ -2462,72 +2866,17 @@ function ChatPage({
             aria-label="Send question"
             disabled={!input.trim() || busy}
           >
-            <Send size={16} />
+            <Send size={18} />
           </Button>
         </form>
+
         <span className="chat-safety">
-          <ShieldCheck size={13} /> Your question, recent conversation and entered context are sent
-          to the AI service. Photos are not sent. Verify field decisions with a local agricultural
-          officer.
+          <ShieldCheck size={15} className="shrink-0" />
+          <span>
+            Verify critical agronomic decisions with a local agricultural officer.
+          </span>
         </span>
       </section>
-      <aside className="panel chat-context-panel">
-        <span className="panel-eyebrow">
-          <Compass size={13} /> CURRENT EXAMPLE
-        </span>
-        <h2>Picking up where you left off.</h2>
-        <div className="chat-context-item">
-          <span className="context-icon">
-            <MapPin size={15} />
-          </span>
-          <span>
-            <small>YOUR SAMPLE FIELD</small>
-            <strong>{farm.place}</strong>
-            <span>
-              {farm.area} hectares · {farm.soil}
-            </span>
-          </span>
-        </div>
-        <div className="chat-context-item">
-          <span className="context-icon context-climate">
-            <CloudSun size={15} />
-          </span>
-          <span>
-            <small>PLANNING SCENARIO</small>
-            <strong>{scenario}</strong>
-            <span>Illustrative sample scenario</span>
-          </span>
-        </div>
-        <div className="chat-context-item">
-          <span className="context-icon context-crop">
-            <Flower2 size={15} />
-          </span>
-          <span>
-            <small>ROTATION TO EXPLORE</small>
-            <strong>{rotation}</strong>
-            <span>Demo score · farm inputs applied</span>
-          </span>
-        </div>
-        <div className="chat-context-item">
-          <span className="context-icon context-hazard">
-            <HeartHandshake size={15} />
-          </span>
-          <span>
-            <small>RECOVERY ESTIMATE</small>
-            <strong>
-              {hazard} · {loss}
-            </strong>
-            <span>Illustrative planning example</span>
-          </span>
-        </div>
-        <div className="chat-context-disclaimer">
-          <CircleHelp size={14} />
-          <span>
-            The advisor explains the sample plan and estimate. It does not read crop photos,
-            diagnose fields, or provide official agricultural advice.
-          </span>
-        </div>
-      </aside>
     </div>
   );
 }
