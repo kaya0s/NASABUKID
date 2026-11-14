@@ -537,9 +537,13 @@ export function FullFarmMap({
   const radiusRef = useRef(radiusMeters);
   radiusRef.current = radiusMeters;
   const [profileOpen, setProfileOpen] = useState(true);
-  const [drawerTab, setDrawerTab] = useState<"rotation" | "recovery" | "profile">(
+  const [farmCardOpen, setFarmCardOpen] = useState(() => boundary.length >= 3);
+  const [drawerTab, setDrawerTab] = useState<"rotation" | "recovery">(
     !ENABLE_RECOVERY_MODAL && advisoryMode === "recovery" ? "recovery" : "rotation",
   );
+  const leftPanelRef = useRef<HTMLElement | null>(null);
+  const rightPanelRef = useRef<HTMLElement | null>(null);
+  const addressRef = useRef<HTMLTextAreaElement | null>(null);
   const [recoveryModalOpen, setRecoveryModalOpen] = useState(
     ENABLE_RECOVERY_MODAL && advisoryMode === "recovery",
   );
@@ -620,11 +624,37 @@ export function FullFarmMap({
     return () => controller.abort();
   }, [location.latitude, location.longitude]);
 
+  const hasValidBoundary = boundary.length >= 3;
+  const landUseAllowed = !checkingLandUse && landUseCheck?.tier !== "hard_block";
+  const leftCardVisible = !drawing && hasValidBoundary && farmCardOpen && landUseAllowed;
+  const rightCardVisible = !drawing && profileOpen && landUseAllowed;
+  const leftCardVisibleRef = useRef(leftCardVisible);
+  const rightCardVisibleRef = useRef(rightCardVisible);
+  leftCardVisibleRef.current = leftCardVisible;
+  rightCardVisibleRef.current = rightCardVisible;
+  const prevHasBoundaryRef = useRef(hasValidBoundary);
+
+  useEffect(() => {
+    if (hasValidBoundary && !prevHasBoundaryRef.current) {
+      setFarmCardOpen(true);
+    } else if (!hasValidBoundary) {
+      setFarmCardOpen(false);
+    }
+    prevHasBoundaryRef.current = hasValidBoundary;
+  }, [hasValidBoundary]);
+
+  useEffect(() => {
+    const el = addressRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [farm.place, leftCardVisible]);
+
   useEffect(() => {
     if (
       !manualCropOverride &&
       boundary.length >= 3 &&
-      profileOpen &&
+      (profileOpen || farmCardOpen) &&
       cropOptions.includes(cropDetection.detectedCrop) &&
       farm.crop !== cropDetection.detectedCrop
     ) {
@@ -634,6 +664,7 @@ export function FullFarmMap({
     manualCropOverride,
     boundary.length,
     profileOpen,
+    farmCardOpen,
     cropDetection.detectedCrop,
     cropOptions,
     farm.crop,
@@ -700,28 +731,40 @@ export function FullFarmMap({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function getLeftAreaPadding(leftPanelVisible: boolean) {
-    const isDesktop = (containerRef.current?.clientWidth ?? 0) >= 768;
-    if (isDesktop && leftPanelVisible) {
+  function getMapClearPadding(hasLeftCard: boolean, hasRightCard: boolean) {
+    const containerW = containerRef.current?.clientWidth ?? 0;
+    const isDesktop = containerW >= 768;
+    if (!isDesktop) {
       return {
-        paddingTopLeft: [490, 84] as [number, number],
-        paddingBottomRight: [48, 84] as [number, number],
+        paddingTopLeft: [24, 72] as [number, number],
+        paddingBottomRight: [24, hasRightCard || hasLeftCard ? 280 : 110] as [number, number],
       };
     }
+    const fallbackLeftW = Math.min(Math.max(containerW * 0.24, 300), 370);
+    const fallbackRightW = Math.min(Math.max(containerW * 0.32 - 9, 390), 560);
+    const leftCardW = hasLeftCard ? leftPanelRef.current?.offsetWidth || fallbackLeftW : 0;
+    const rightCardW = hasRightCard ? rightPanelRef.current?.offsetWidth || fallbackRightW : 0;
+    // Card edge inset (14px) + breathing room (34px) so the full selected boundary never collides with either card.
+    const leftPad = hasLeftCard ? leftCardW + 48 : 36;
+    const rightPad = hasRightCard ? rightCardW + 48 : 48;
     return {
-      paddingTopLeft: [36, 72] as [number, number],
-      paddingBottomRight: [36, 36] as [number, number],
+      paddingTopLeft: [Math.round(leftPad), 92] as [number, number],
+      paddingBottomRight: [Math.round(rightPad), 76] as [number, number],
     };
   }
 
-  function framePointInLeftArea(map: MapInstance, lat: number, lon: number, maxZoom = 18) {
+  function framePointInClearArea(map: MapInstance, lat: number, lon: number, maxZoom = 18) {
     const delta = 0.0009;
     map.fitBounds(
       [
         [lat - delta, lon - delta],
         [lat + delta, lon + delta],
       ],
-      { ...getLeftAreaPadding(true), maxZoom, animate: true },
+      {
+        ...getMapClearPadding(leftCardVisibleRef.current, rightCardVisibleRef.current),
+        maxZoom,
+        animate: true,
+      },
     );
   }
 
@@ -735,7 +778,7 @@ export function FullFarmMap({
 
     const map = mapRef.current;
     if (map) {
-      framePointInLeftArea(map, next.latitude, next.longitude, 16);
+      framePointInClearArea(map, next.latitude, next.longitude, 16);
     }
 
     showLandmarkFor(next.latitude, next.longitude, "pin", null);
@@ -971,7 +1014,10 @@ export function FullFarmMap({
         if (visiblePoints.current.length >= 3) {
           instance.fitBounds(
             visiblePoints.current.map((p) => [p.latitude, p.longitude]),
-            { ...getLeftAreaPadding(true), maxZoom: 20 },
+            {
+              ...getMapClearPadding(leftCardVisibleRef.current, rightCardVisibleRef.current),
+              maxZoom: 19,
+            },
           );
         }
 
@@ -991,7 +1037,7 @@ export function FullFarmMap({
               getEastEdge({ lat: clicked.latitude, lng: clicked.longitude }, radiusRef.current),
             );
             changeRef.current(clicked);
-            framePointInLeftArea(instance, clicked.latitude, clicked.longitude, 16);
+            framePointInClearArea(instance, clicked.latitude, clicked.longitude, 16);
             showLandmarkFor(clicked.latitude, clicked.longitude, "pin", radiusRef.current);
           }
         });
@@ -1001,7 +1047,18 @@ export function FullFarmMap({
         });
         if (typeof ResizeObserver !== "undefined" && containerRef.current) {
           resizeObserver = new ResizeObserver(() => {
-            if (!disposed) instance.invalidateSize(false);
+            if (disposed) return;
+            instance.invalidateSize(false);
+            if (!drawingRef.current && savedBoundary.current.length >= 3) {
+              instance.fitBounds(
+                savedBoundary.current.map((p) => [p.latitude, p.longitude]),
+                {
+                  ...getMapClearPadding(leftCardVisibleRef.current, rightCardVisibleRef.current),
+                  maxZoom: 19,
+                  animate: false,
+                },
+              );
+            }
           });
           resizeObserver.observe(containerRef.current);
         }
@@ -1101,15 +1158,20 @@ export function FullFarmMap({
     );
     if (!drawing && boundary.length >= 3) {
       const id = requestAnimationFrame(() => {
+        mapRef.current?.invalidateSize(false);
         mapRef.current?.fitBounds(
           boundary.map((p) => [p.latitude, p.longitude]),
-          { ...getLeftAreaPadding(profileOpen), maxZoom: 20, animate: true },
+          {
+            ...getMapClearPadding(leftCardVisible, rightCardVisible),
+            maxZoom: 19,
+            animate: true,
+          },
         );
       });
       return () => cancelAnimationFrame(id);
     }
     return undefined;
-  }, [drawing, draft, boundary, profileOpen]);
+  }, [drawing, draft, boundary, leftCardVisible, rightCardVisible]);
 
   function applyDetectedPosition(pos: GeolocationPosition) {
     setLocating(false);
@@ -1133,7 +1195,7 @@ export function FullFarmMap({
 
     const map = mapRef.current;
     if (map) {
-      framePointInLeftArea(map, next.latitude, next.longitude, 17);
+      framePointInClearArea(map, next.latitude, next.longitude, 17);
     }
 
     if (accuracy !== null && accuracy > 1000) {
@@ -1412,6 +1474,7 @@ export function FullFarmMap({
                   variant="destructive"
                   onClick={() => {
                     onBoundary([]);
+                    setFarmCardOpen(false);
                     setProfileOpen(false);
                   }}
                 >
@@ -1446,8 +1509,9 @@ export function FullFarmMap({
                         setLandUseCheck(landUse);
                         setLandUseBlockedMessage(
                           landUse.message ??
-                            "The selected area is invalid (urban structure, building, or water body detected). Please select an agricultural parcel.",
+                          "The selected area is invalid (urban structure, building, or water body detected). Please select an agricultural parcel.",
                         );
+                        setFarmCardOpen(false);
                         setProfileOpen(false);
                         onBoundary([]);
                         return;
@@ -1457,6 +1521,7 @@ export function FullFarmMap({
                     setLandUseBlockedMessage("");
                     onBoundary(measured.points);
                     setDrawing(false);
+                    setFarmCardOpen(true);
                     setProfileOpen(true);
                     setError("");
                   } catch (err) {
@@ -1496,699 +1561,49 @@ export function FullFarmMap({
         </div>
       </div>
 
-      {/* Left-side Plot Intelligence & Advisory Drawer */}
-      {!drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block" && (
-        <aside className="full-map-profile-panel" aria-label="Plot intelligence and farm profile">
-          <div className="full-map-profile-head">
-            <div>
-              <div className="drawer-badges-row">
-                <span className="drawer-badge-nasa">
-                  {drawerTab === "recovery"
-                    ? "REGIONAL DATA · DEMO ESTIMATE"
-                    : drawerTab === "profile"
-                      ? "FIELD RECORD"
-                      : "REGIONAL DATA · DEMO OPTIONS"}
-                </span>
-                <span className="drawer-badge-engine">
-                  {drawerTab === "recovery"
-                    ? "Recovery Engine"
-                    : drawerTab === "profile"
-                      ? "Soil & Plot"
-                      : "Rotation Engine"}
-                </span>
-                {historical?.sourceUrl && (
-                  <a
-                    href={historical.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="drawer-verify-link"
-                  >
-                    Verify NASA Data <ExternalLink size={11} />
-                  </a>
-                )}
+      {/* Left-side column: Farm Profile card + legend message + heatmap layer pills */}
+      {!drawing && (
+        <div className="full-map-left-stack">
+          {leftCardVisible && (
+            <aside
+              ref={leftPanelRef}
+              className="full-map-farm-card"
+              aria-label="Farm profile"
+            >
+              <div className="full-map-farm-photo-wrap">
+                <img
+                  src={bukidnonFields}
+                  alt={
+                    farm.place && farm.place !== "Location not identified"
+                      ? `Selected farm plot in ${farm.place}`
+                      : "Selected farm plot"
+                  }
+                  className="full-map-farm-photo"
+                />
+                <button
+                  type="button"
+                  className="full-map-farm-photo-close"
+                  aria-label="Close farm profile panel"
+                  onClick={() => setFarmCardOpen(false)}
+                >
+                  <X size={14} />
+                </button>
               </div>
-              <h3>
-                {drawerTab === "recovery"
-                  ? "Disaster Recovery & Loss Check"
-                  : drawerTab === "profile"
-                    ? "Farm Profile"
-                    : "Crop Rotation & Land Advisory"}
-              </h3>
-            </div>
-            <div className="full-map-profile-head-right">
-              <button
-                type="button"
-                className="full-map-profile-close"
-                aria-label="Close advisory panel"
-                onClick={() => setProfileOpen(false)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
 
-          <div className="drawer-tab-bar" role="tablist" aria-label="Drawer view">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!recoveryModalOpen && drawerTab === "rotation"}
-              className={!recoveryModalOpen && drawerTab === "rotation" ? "is-active" : ""}
-              onClick={() => {
-                setRecoveryModalOpen(false);
-                setDrawerTab("rotation");
-                onAdvisoryModeChange?.("rotation");
-              }}
-            >
-              Crop Rotation
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={ENABLE_RECOVERY_MODAL ? recoveryModalOpen : drawerTab === "recovery"}
-              className={
-                (ENABLE_RECOVERY_MODAL ? recoveryModalOpen : drawerTab === "recovery")
-                  ? "is-active"
-                  : ""
-              }
-              onClick={() => {
-                onOpenRecovery?.();
-                if (ENABLE_RECOVERY_MODAL) {
-                  setRecoveryModalOpen(true);
-                } else {
-                  setDrawerTab("recovery");
-                }
-                onAdvisoryModeChange?.("recovery");
-              }}
-            >
-              Disaster Recovery
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!recoveryModalOpen && drawerTab === "profile"}
-              className={!recoveryModalOpen && drawerTab === "profile" ? "is-active" : ""}
-              onClick={() => {
-                setRecoveryModalOpen(false);
-                setDrawerTab("profile");
-              }}
-            >
-              Farm Profile
-            </button>
-          </div>
+              <h3 className="full-map-farm-title">Farm Profile</h3>
 
-          {drawerTab === "recovery" ? (
-            (() => {
-              const moistureTag =
-                moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
-              const parsedArea = Number(farm.area);
-              const parsedYield = Number(activeExpectedYield);
-              const parsedPrice = Number(activePrice);
-              const validRecoveryInputs =
-                Number.isFinite(parsedArea) &&
-                parsedArea >= 0 &&
-                Number.isFinite(parsedYield) &&
-                parsedYield >= 0 &&
-                Number.isFinite(parsedPrice) &&
-                parsedPrice >= 0;
-              const estimatedLoss = validRecoveryInputs
-                ? calculateEstimatedLoss({
-                    areaHectares: parsedArea,
-                    affectedFraction: activeAffected / 100,
-                    expectedYieldKgPerHectare: parsedYield,
-                    yieldLossFraction: activeYieldLoss / 100,
-                    pricePerKg: parsedPrice,
-                  })
-                : 0;
-              const hazardMeta = RECOVERY_HAZARDS[activeHazard];
-
-              if (!SHOW_COMPACT_RECOVERY_UI && cardRecoveryContent) {
-                return (
-                  <div className="drawer-card-recovery-wrap">
-                    {cardRecoveryContent}
-                  </div>
-                );
-              }
-
-              return (
-                <div className="drawer-rotation-body">
-                  <div className="drawer-telemetry-grid" aria-label="Farm weather and soil summary">
-                    <button
-                      type="button"
-                      className={`telemetry-tile is-smap is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
-                      aria-pressed={heatmap === "soil_moisture"}
-                      title="Show soil moisture on the map"
-                      onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
-                    >
-                      <div className="telemetry-tile-head">
-                        <Droplets size={14} />
-                        <span>MOISTURE</span>
-                      </div>
-                      <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
-                      <small>{moistureTag}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className={`telemetry-tile is-modis is-action ${heatmap === "lst" ? "is-on" : ""}`}
-                      aria-pressed={heatmap === "lst"}
-                      title="Show ground heat on the map"
-                      onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
-                    >
-                      <div className="telemetry-tile-head">
-                        <ThermometerSun size={14} />
-                        <span>HEAT</span>
-                      </div>
-                      <strong>
-                        {climateLoading
-                          ? "…"
-                          : surfaceTemp !== null
-                            ? `${surfaceTemp.toFixed(1)}°C`
-                            : "—"}
-                      </strong>
-                      <small>Ground Temp</small>
-                    </button>
-                    <div className="telemetry-tile is-gpm">
-                      <div className="telemetry-tile-head">
-                        <CloudRain size={14} />
-                        <span>RAIN</span>
-                      </div>
-                      <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)}mm` : "—"}</strong>
-                      <small>Last 30 Days</small>
-                    </div>
-                    <button
-                      type="button"
-                      className={`telemetry-tile is-ndvi is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
-                      aria-pressed={heatmap === "ndvi"}
-                      title="Show plant health on the map"
-                      onClick={() => setHeatmap(heatmap === "ndvi" ? "none" : "ndvi")}
-                    >
-                      <div className="telemetry-tile-head">
-                        <Sprout size={14} />
-                        <span>HEALTH</span>
-                      </div>
-                      <strong>
-                        {ndviLoading
-                          ? "…"
-                          : modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
-                            ? modisNdvi.latestNdvi.toFixed(2)
-                            : heatmap === "ndvi"
-                              ? "On"
-                              : "—"}
-                      </strong>
-                      <small>Greenness</small>
-                    </button>
-                  </div>
-
-                  {!SHOW_COMPACT_RECOVERY_UI && legacyRecoveryContent && (
-                    <div className="drawer-legacy-recovery">{legacyRecoveryContent}</div>
-                  )}
-
-                  {SHOW_COMPACT_RECOVERY_UI && (
-                    <>
-                  <div className="drawer-recovery-section">
-                    <div className="drawer-sequence-heading">WHAT HAPPENED ON THIS FIELD?</div>
-                    <div className="drawer-hazard-grid" role="group" aria-label="Select weather event">
-                      {(Object.keys(RECOVERY_HAZARDS) as HazardType[]).map((item) => {
-                        const Icon = RECOVERY_HAZARDS[item].icon;
-                        const active = activeHazard === item;
-                        return (
-                          <button
-                            key={item}
-                            type="button"
-                            className={`drawer-hazard-btn ${active ? "is-active" : ""}`}
-                            aria-pressed={active}
-                            onClick={() => setActiveHazard(item)}
-                          >
-                            <Icon size={15} />
-                            <span>{item}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="drawer-recovery-note">{hazardMeta.summary}</p>
-                  </div>
-
-                  <div className="drawer-recovery-loss-box">
-                    <div className="drawer-recovery-loss-head">
-                      <span>ESTIMATED INCOME AT RISK · DEMO</span>
-                      <strong>
-                        {validRecoveryInputs ? `${PHP_FORMATTER.format(estimatedLoss)} PHP` : "Check inputs"}
-                      </strong>
-                    </div>
-                    <div className="drawer-recovery-sliders">
-                      <label className="drawer-range-field">
-                        <div>
-                          <span>Area affected</span>
-                          <b>{activeAffected}%</b>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={5}
-                          value={activeAffected}
-                          onChange={(e) => setActiveAffected(Number(e.target.value))}
-                        />
-                      </label>
-                      <label className="drawer-range-field">
-                        <div>
-                          <span>Expected yield loss</span>
-                          <b>{activeYieldLoss}%</b>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={5}
-                          value={activeYieldLoss}
-                          onChange={(e) => setActiveYieldLoss(Number(e.target.value))}
-                        />
-                      </label>
-                    </div>
-                    <div className="drawer-recovery-inputs">
-                      <div className="form-field">
-                        <Label htmlFor="drawer-damage-date">Event date</Label>
-                        <Input
-                          id="drawer-damage-date"
-                          type="date"
-                          value={activeDamageDate}
-                          onChange={(e) => setActiveDamageDate(e.target.value)}
-                        />
-                      </div>
-                      <div className="form-field">
-                        <Label htmlFor="drawer-recovery-area">Area (ha)</Label>
-                        <Input
-                          id="drawer-recovery-area"
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={farm.area}
-                          onChange={(e) => onUpdateFarm("area", e.target.value)}
-                        />
-                      </div>
-                      <div className="form-field">
-                        <Label htmlFor="drawer-yield-est">Yield (kg/ha)</Label>
-                        <Input
-                          id="drawer-yield-est"
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={activeExpectedYield}
-                          onChange={(e) => setActiveExpectedYield(e.target.value)}
-                        />
-                      </div>
-                      <div className="form-field">
-                        <Label htmlFor="drawer-price-est">Price (₱/kg)</Label>
-                        <Input
-                          id="drawer-price-est"
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={activePrice}
-                          onChange={(e) => setActivePrice(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <small className="drawer-recovery-foot">
-                      Sample calculation ({farm.area} ha × {activeAffected}% × {activeYieldLoss}% ×{" "}
-                      {activeExpectedYield} kg/ha × ₱{activePrice}/kg). Not a verified claim.
-                    </small>
-                  </div>
-
-                  <div className="drawer-recovery-section">
-                    <div className="drawer-sequence-heading">POSSIBLE NEXT STEPS · {activeHazard.toUpperCase()}</div>
-                    <ol className="drawer-recovery-steps">
-                      {RECOVERY_STEPS[activeHazard].map((step, index) => (
-                        <li key={step}>
-                          <span>{index + 1}</span>
-                          <p>{step}</p>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-
-                  <div className="drawer-recovery-replant">
-                    <div className="drawer-recovery-replant-head">
-                      <ShieldCheck size={14} />
-                      <span>FAST REPLANTING NOTE</span>
-                    </div>
-                    <p>{hazardMeta.replantNote}</p>
-                  </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()
-          ) : drawerTab === "rotation" ? (
-            (() => {
-              const moistureTag =
-                moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
-              const currentProfile = getCropProfile(farm.crop);
-              const strategies = buildRotationStrategies("Typical", {
-                ph: farm.ph.trim() ? Number(farm.ph) : NaN,
-                drainage: farm.drainage,
-                irrigation: farm.irrigation,
-                planted: farm.planted,
-                crop: farm.crop,
-                previous: farm.previous,
-                slopePercent: slope,
-                soil: farm.soil,
-              });
-
-              return (
-                <div className="drawer-rotation-body">
-                  {ENABLE_FARM_LOT_VERIFICATION && landUseCheck?.tier === "soft_confirm" && landUseCheck.message && (
-                    <div className="drawer-landuse-note" role="note">
-                      {landUseCheck.message}
-                    </div>
-                  )}
-                  <div className="drawer-telemetry-grid" aria-label="Farm weather and soil summary">
-                    <button
-                      type="button"
-                      className={`telemetry-tile is-smap is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
-                      aria-pressed={heatmap === "soil_moisture"}
-                      title="Show soil moisture on the map"
-                      onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
-                    >
-                      <div className="telemetry-tile-head">
-                        <Droplets size={14} />
-                        <span>MOISTURE</span>
-                      </div>
-                      <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
-                      <small>{moistureTag}</small>
-                    </button>
-                    <button
-                      type="button"
-                      className={`telemetry-tile is-modis is-action ${heatmap === "lst" ? "is-on" : ""}`}
-                      aria-pressed={heatmap === "lst"}
-                      title="Show ground heat on the map"
-                      onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
-                    >
-                      <div className="telemetry-tile-head">
-                        <ThermometerSun size={14} />
-                        <span>HEAT</span>
-                      </div>
-                      <strong>
-                        {climateLoading
-                          ? "…"
-                          : surfaceTemp !== null
-                            ? `${surfaceTemp.toFixed(1)}°C`
-                            : "—"}
-                      </strong>
-                      <small>Ground Temp</small>
-                    </button>
-                    <div className="telemetry-tile is-gpm">
-                      <div className="telemetry-tile-head">
-                        <CloudRain size={14} />
-                        <span>RAIN</span>
-                      </div>
-                      <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)}mm` : "—"}</strong>
-                      <small>Last 30 Days</small>
-                    </div>
-                    <button
-                      type="button"
-                      className={`telemetry-tile is-ndvi is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
-                      aria-pressed={heatmap === "ndvi"}
-                      title="Show plant health on the map"
-                      onClick={() => setHeatmap(heatmap === "ndvi" ? "none" : "ndvi")}
-                    >
-                      <div className="telemetry-tile-head">
-                        <Sprout size={14} />
-                        <span>HEALTH</span>
-                      </div>
-                      <strong>
-                        {ndviLoading
-                          ? "…"
-                          : modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
-                            ? modisNdvi.latestNdvi.toFixed(2)
-                            : heatmap === "ndvi"
-                              ? "On"
-                              : "—"}
-                      </strong>
-                      <small>
-                        {modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
-                          ? modisNdvi.latestNdvi >= 0.5
-                            ? "Healthy"
-                            : modisNdvi.latestNdvi >= 0.25
-                              ? "Growing"
-                              : "Low"
-                          : "Greenness"}
-                      </small>
-                    </button>
-                  </div>
-
-                  {climateLoading || ndviLoading ? (
-                    <div
-                      className="drawer-rotation-skeleton"
-                      role="status"
-                      aria-live="polite"
-                      aria-label="Loading crop rotation and telemetry analysis"
-                    >
-                      <div className="drawer-current-crop-card drawer-skeleton-card" aria-hidden="true">
-                        <div className="drawer-crop-thumb drawer-skeleton-circle" />
-                        <div className="drawer-current-crop-info">
-                          <div className="drawer-current-crop-top">
-                            <span className="drawer-skeleton-bar" style={{ width: 92, height: 10 }} />
-                            <span className="drawer-skeleton-bar" style={{ width: 88, height: 22, borderRadius: 6 }} />
-                          </div>
-                          <div className="drawer-detection-row">
-                            <span className="drawer-skeleton-bar" style={{ width: 170, height: 18, borderRadius: 999 }} />
-                          </div>
-                          <span className="drawer-skeleton-bar" style={{ width: "68%", height: 14, marginTop: 4 }} />
-                          <span className="drawer-skeleton-bar" style={{ width: "95%", height: 11, marginTop: 6 }} />
-                          <span className="drawer-skeleton-bar" style={{ width: "78%", height: 11, marginTop: 4 }} />
-                          <div className="drawer-ndvi-sparkline">
-                            <span className="drawer-skeleton-bar" style={{ width: 120, height: 18, borderRadius: 4 }} />
-                            <span className="drawer-skeleton-bar" style={{ width: 130, height: 10 }} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="drawer-sequence-heading" aria-hidden="true">
-                        <span className="drawer-skeleton-bar" style={{ width: 220, height: 11 }} />
-                      </div>
-
-                      <div className="drawer-timeline" aria-hidden="true">
-                        {[0, 1, 2].map((idx) => (
-                          <div key={idx} className="drawer-timeline-card drawer-skeleton-card">
-                            <div className="drawer-timeline-summary" style={{ cursor: "default" }}>
-                              <span className="timeline-step-num drawer-skeleton-circle" />
-                              <div className="drawer-crop-thumb drawer-skeleton-circle" />
-                              <div className="timeline-summary-copy">
-                                <div className="timeline-meta-row">
-                                  <span className="drawer-skeleton-bar" style={{ width: 110, height: 10 }} />
-                                  <span className="drawer-skeleton-bar" style={{ width: 86, height: 16, borderRadius: 999 }} />
-                                </div>
-                                <span className="drawer-skeleton-bar" style={{ width: "64%", height: 14, marginTop: 4 }} />
-                                <span className="drawer-skeleton-bar" style={{ width: "92%", height: 11, marginTop: 6 }} />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="drawer-current-crop-card">
-                    <img
-                      src={currentProfile.image}
-                      alt={currentProfile.name}
-                      className="drawer-crop-thumb"
-                    />
-                    <div className="drawer-current-crop-info">
-                      <div className="drawer-current-crop-top">
-                        <span className="drawer-current-eyebrow">CURRENT CROP</span>
-                        <select
-                          aria-label="Change current crop"
-                          className="drawer-inline-select"
-                          value={farm.crop}
-                          onChange={(e) => {
-                            setManualCropOverride(true);
-                            onUpdateFarm("crop", e.target.value);
-                          }}
-                        >
-                          {cropOptions.map((crop) => (
-                            <option key={crop} value={crop}>
-                              {crop}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="drawer-detection-row">
-                        <span className={`drawer-detection-pill ${manualCropOverride ? "is-manual" : ""}`}>
-                          {manualCropOverride
-                            ? `Manual override · Satellite: ${cropDetection.detectedCrop} (${cropDetection.confidencePct}%)`
-                            : `Detected: ${cropDetection.detectedCrop} · ${cropDetection.confidencePct}% (${cropDetection.detectionMethod})`}
-                        </span>
-                      </div>
-                      <strong>
-                        {currentProfile.name} / {currentProfile.localName}{" "}
-                        <em>({currentProfile.scientificName})</em>
-                      </strong>
-                      <p>{currentProfile.soilImpact}</p>
-                      {modisNdvi && modisNdvi.points.length >= 2 && (
-                        <div className="drawer-ndvi-sparkline" title="6-month MODIS MOD13Q1 16-day NDVI trend">
-                          <svg viewBox="0 0 120 22" width="120" height="22" aria-hidden="true">
-                            <polyline
-                              fill="none"
-                              stroke="#15803d"
-                              strokeWidth="1.75"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              points={modisNdvi.points
-                                .map((pt, i, arr) => {
-                                  const x = (i / Math.max(1, arr.length - 1)) * 116 + 2;
-                                  const clamped = Math.max(0, Math.min(1, pt.ndvi));
-                                  const y = 20 - clamped * 18;
-                                  return `${x.toFixed(1)},${y.toFixed(1)}`;
-                                })
-                                .join(" ")}
-                            />
-                          </svg>
-                          <span>
-                            6-mo NDVI ({modisNdvi.points.length} pts · peak {modisNdvi.peakNdvi?.toFixed(2)})
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="drawer-sequence-heading">
-                    <span>THREE DEMO OPTIONS · NOT VALIDATED RECOMMENDATIONS</span>
-                  </div>
-
-                  <div className="drawer-timeline">
-                    {strategies.map((strategy, idx) => {
-                      const isExpanded = expandedStrategyId === strategy.id;
-                      return (
-                        <div
-                          key={strategy.id}
-                          className={`drawer-timeline-card ${isExpanded ? "is-expanded" : ""}`}
-                        >
-                          <button
-                            type="button"
-                            className="drawer-timeline-summary"
-                            onClick={() => setExpandedStrategyId(isExpanded ? "" : strategy.id)}
-                          >
-                            <span className="timeline-step-num">{idx + 1}</span>
-                            <img
-                              src={strategy.nextCropImage}
-                              alt={strategy.nextCrop}
-                              className="drawer-crop-thumb"
-                            />
-                            <div className="timeline-summary-copy">
-                              <div className="timeline-meta-row">
-                                <span className="timeline-window">
-                                  {strategy.plantingWindow} · {strategy.cycleDays}
-                                </span>
-                                <span className="timeline-match-pill">
-                                  {Math.round(strategy.total)} / 100 · Demo
-                                </span>
-                              </div>
-                              <strong>
-                                {strategy.nextCrop} / {strategy.nextCropLocalName}{" "}
-                                <em>({strategy.nextCropScientificName})</em>
-                              </strong>
-                              <p>{strategy.satelliteWhy[0]}</p>
-                            </div>
-                            <ChevronDown
-                              size={15}
-                              className={`timeline-chevron ${isExpanded ? "is-open" : ""}`}
-                            />
-                          </button>
-
-                          <div
-                            className={`drawer-collapse ${isExpanded ? "is-open" : ""}`}
-                            aria-hidden={!isExpanded}
-                          >
-                            <div className="drawer-collapse-inner">
-                              <div className="drawer-timeline-details">
-                                <div className="drawer-detail-tabs">
-                                  <button
-                                    type="button"
-                                    className={detailTab === "proscons" ? "is-active" : ""}
-                                    onClick={() => setDetailTab("proscons")}
-                                  >
-                                    Pros &amp; Cons
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={detailTab === "pests" ? "is-active" : ""}
-                                    onClick={() => setDetailTab("pests")}
-                                  >
-                                    Pests &amp; Mitigations ({strategy.pestsAndDiseases.length})
-                                  </button>
-                                </div>
-
-                                {detailTab === "proscons" ? (
-                                  <div className="drawer-proscons-grid">
-                                    <div>
-                                      <strong className="pros-title">Pros</strong>
-                                      <ul>
-                                        {strategy.pros.map((item) => (
-                                          <li key={item}>{item}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                    <div>
-                                      <strong className="cons-title">Cons &amp; Trade-offs</strong>
-                                      <ul>
-                                        {strategy.cons.map((item) => (
-                                          <li key={item}>{item}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="drawer-pests-list">
-                                    {strategy.pestsAndDiseases.map((pest) => (
-                                      <div key={pest.name} className="drawer-pest-item">
-                                        <div className="drawer-pest-head">
-                                          <strong>{pest.name}</strong>
-                                          <span
-                                            className={`risk-pill risk-${pest.riskLevel.toLowerCase()}`}
-                                          >
-                                            {pest.riskLevel} Risk
-                                          </span>
-                                        </div>
-                                        <small>
-                                          <b>Trigger:</b> {pest.riskWindow}
-                                        </small>
-                                        <small>
-                                          <b>Mitigation:</b> {pest.mitigation}
-                                        </small>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
-                                <div className="drawer-verification-tags">
-                                  {strategy.verificationTags.map((tag) => (
-                                    <span key={tag}>{tag}</span>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()
-          ) : (
-            <>
               <div className="full-map-profile-grid">
                 <div className="form-field full-span">
-                  <Label htmlFor="map-farm-location">Municipality / city (automatic, editable)</Label>
-                  <Input
+                  <Label htmlFor="map-farm-location">Complete address (automatic, editable)</Label>
+                  <textarea
+                    ref={addressRef}
                     id="map-farm-location"
+                    rows={1}
+                    spellCheck={false}
+                    className="full-map-address-textarea"
                     value={farm.place}
                     onChange={(e) => onUpdateFarm("place", e.target.value)}
                   />
-                  <small>Detected from your selected farm point when public records are available.</small>
                 </div>
 
                 <div className="form-field">
@@ -2197,7 +1612,6 @@ export function FullFarmMap({
                     <Input id="map-area-ha" readOnly value={farm.area} />
                     <span>ha</span>
                   </div>
-                  <small>Calculated from drawn boundary.</small>
                 </div>
 
                 <div className="form-field">
@@ -2292,16 +1706,16 @@ export function FullFarmMap({
               </div>
 
               {(() => {
-                const climateSummary = historical ? summarizeWeather(historical.days) : null;
-                const slope = terrain?.slopePercent;
+                const farmClimateSummary = historical ? summarizeWeather(historical.days) : null;
+                const farmSlope = terrain?.slopePercent;
                 const slopeStatus =
-                  slope === undefined
+                  farmSlope === undefined
                     ? "Sampling terrain…"
-                    : slope > 15
-                      ? `${slope.toFixed(1)}% slope · Steep (erosion risk)`
-                      : slope > 8
-                        ? `${slope.toFixed(1)}% slope · Moderate`
-                        : `${slope.toFixed(1)}% slope · Suitable`;
+                    : farmSlope > 15
+                      ? `${farmSlope.toFixed(1)}% slope · Steep (erosion risk)`
+                      : farmSlope > 8
+                        ? `${farmSlope.toFixed(1)}% slope · Moderate`
+                        : `${farmSlope.toFixed(1)}% slope · Suitable`;
                 return (
                   <div
                     className="full-map-nasa-snapshot"
@@ -2312,8 +1726,8 @@ export function FullFarmMap({
                       <strong>
                         {climateLoading
                           ? "Fetching NASA climate…"
-                          : climateSummary
-                            ? `${climateSummary.temperature !== null ? `${climateSummary.temperature.toFixed(1)}°C` : "—"} · ${climateSummary.rainfall !== null ? `${Math.round(climateSummary.rainfall)} mm rain` : "—"}`
+                          : farmClimateSummary
+                            ? `${farmClimateSummary.temperature !== null ? `${farmClimateSummary.temperature.toFixed(1)}°C` : "—"} · ${farmClimateSummary.rainfall !== null ? `${Math.round(farmClimateSummary.rainfall)} mm rain` : "—"}`
                             : "Select area to load"}
                       </strong>
                     </div>
@@ -2328,151 +1742,970 @@ export function FullFarmMap({
                   </div>
                 );
               })()}
-            </>
+            </aside>
           )}
 
-          {drawerTab !== "recovery" && (
-            <div className="full-map-profile-foot">
-              <span className="full-map-profile-saved">
-                <span className="save-indicator">
-                  <Check size={11} />
-                </span>
-                Saved in this browser
-              </span>
-              {onContinue && (
-                <Button type="button" size="sm" onClick={onContinue}>
-                  Continue to crop planning <ArrowRight size={14} />
-                </Button>
-              )}
-            </div>
-          )}
-        </aside>
-      )}
-
-      {/* Floating Landmark / Location Preview Modal */}
-      {landmark && !drawing && (
-        <div
-          className={`landmark-modal ${isDragging ? "is-dragging" : ""}`}
-          role="dialog"
-          aria-label="Detected location landmark"
-          style={
-            {
-              "--drag-x": `${modalOffset.x}px`,
-              "--drag-y": `${modalOffset.y}px`,
-            } as React.CSSProperties
-          }
-        >
-          <div
-            className="landmark-drag-header"
-            onPointerDown={handleModalDragStart}
-            onPointerMove={handleModalDragMove}
-            onPointerUp={handleModalDragEnd}
-            onPointerCancel={handleModalDragEnd}
-            title="Drag to reposition modal"
-          >
-            <GripHorizontal size={14} />
-            <span>Drag to move</span>
-          </div>
-          <button
-            type="button"
-            className="landmark-close"
-            aria-label="Close landmark preview"
-            onClick={() => {
-              setLandmark(null);
-              setModalOffset({ x: 0, y: 0 });
-            }}
-          >
-            <X size={14} />
-          </button>
-          <div className="landmark-image-wrap">
-            <img
-              src={landmark.photoUrl || bukidnonFields}
-              alt={landmark.photoLabel || "Representative photo of selected area"}
-              title={landmark.photoLabel || "Representative area photo"}
-              onError={(e) => {
-                if (e.currentTarget.src !== bukidnonFields) {
-                  e.currentTarget.src = bukidnonFields;
-                }
-              }}
-            />
-            <span className="landmark-badge">
-              <Navigation size={11} />
-              {landmark.source === "gps" ? "YOUR GPS LOCATION" : "PINNED LANDMARK"}
-            </span>
-            {landmark.accuracyMeters !== null && (
-              <span className="landmark-accuracy">±{landmark.accuracyMeters} m</span>
+          <div className="full-map-bottom-hud" aria-label="Map legend and layer switcher">
+            {((hasValidBoundary && !farmCardOpen) || !profileOpen) && (
+              <div className="full-map-reopen-row">
+                {hasValidBoundary && !farmCardOpen && (
+                  <button
+                    type="button"
+                    className="full-map-hud-reopen-btn"
+                    onClick={() => setFarmCardOpen(true)}
+                  >
+                    <MapPin size={13} />
+                    <span>Open Farm Profile</span>
+                  </button>
+                )}
+                {!profileOpen && (
+                  <button
+                    type="button"
+                    className="full-map-hud-reopen-btn"
+                    onClick={() => setProfileOpen(true)}
+                  >
+                    {drawerTab === "recovery" ? <ShieldAlert size={13} /> : <Sprout size={13} />}
+                    <span>{drawerTab === "recovery" ? "Open Recovery" : "Open Advisory"}</span>
+                  </button>
+                )}
+              </div>
             )}
-          </div>
-          <div className="landmark-body">
-            <strong>{landmarkLoading ? "Identifying landmark…" : landmark.title}</strong>
-            <span>{landmark.subtitle}</span>
-            <div className="landmark-meta">
-              <span>
-                {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
-              </span>
-            </div>
-            <div className="landmark-radius-control">
-              <div className="landmark-radius-row">
-                <label htmlFor="landmark-radius-range">Area radius (drag pin or edge)</label>
-                <span>
-                  {radiusMeters} m (≈ {((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)}{" "}
-                  ha)
+            <div className="full-map-legend-card" role="status" aria-live="polite">
+              <div className="full-map-legend-head">
+                <span
+                  className={`full-map-legend-title ${heatmap === "soil_moisture"
+                    ? "is-smap"
+                    : heatmap === "ndvi"
+                      ? "is-ndvi"
+                      : heatmap === "lst"
+                        ? "is-lst"
+                        : "is-truecolor"
+                    }`}
+                >
+                  <span className="full-map-legend-dot" aria-hidden="true" />
+                  {heatmap === "soil_moisture"
+                    ? "SOIL MOISTURE"
+                    : heatmap === "ndvi"
+                      ? "PLANT HEALTH"
+                      : heatmap === "lst"
+                        ? "GROUND HEAT"
+                        : "YOUR FARM FIELD"}
+                </span>
+                <span className="full-map-legend-source">
+                  {heatmap === "soil_moisture"
+                    ? "NASA Soil Data"
+                    : heatmap === "ndvi"
+                      ? "NASA Greenness"
+                      : heatmap === "lst"
+                        ? "NASA Heat Map"
+                        : "Satellite View"}
                 </span>
               </div>
-              <input
-                id="landmark-radius-range"
-                type="range"
-                min={15}
-                max={1000}
-                step={5}
-                value={Math.min(1000, radiusMeters)}
-                onChange={(e) => setRadiusMeters(Number(e.target.value))}
-                className="landmark-slider"
-              />
+              <p className="full-map-legend-desc">
+                {heatmap === "soil_moisture"
+                  ? `Soil moisture is ${moisture !== null ? `${moisture}%` : "loading"}. Shows how wet or dry the topsoil is.`
+                  : heatmap === "ndvi"
+                    ? `Plant greenness is ${modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                      ? modisNdvi.latestNdvi.toFixed(2)
+                      : "loading"
+                    } for your field. Higher means greener plants.`
+                    : heatmap === "lst"
+                      ? `Ground temperature is ${surfaceTemp !== null ? `${surfaceTemp.toFixed(1)}°C` : "loading"
+                      }. Shows how warm the soil surface is.`
+                      : `Showing your farm boundary${farm.place && farm.place !== "Location not identified" ? ` in ${farm.place}` : ""
+                      }. Tap a layer below to check soil moisture or plant health.`}
+              </p>
+              {heatmap !== "none" && (
+                <div className="full-map-legend-scale">
+                  <div
+                    className="full-map-legend-bar"
+                    style={{
+                      background:
+                        heatmap === "ndvi"
+                          ? "linear-gradient(90deg, #ef4444, #facc15, #16a34a)"
+                          : heatmap === "soil_moisture"
+                            ? "linear-gradient(90deg, #fbbf24, #38bdf8, #1d4ed8)"
+                            : HEATMAP_LAYERS[heatmap].gradient,
+                    }}
+                  />
+                  <div className="full-map-legend-ticks">
+                    {heatmap === "ndvi" ? (
+                      <>
+                        <span>0.15 Bare Soil</span>
+                        <span>0.50 Growing</span>
+                        <span>0.85 Lush &amp; Green</span>
+                      </>
+                    ) : heatmap === "soil_moisture" ? (
+                      <>
+                        <span>10% Dry</span>
+                        <span>35% Just Right</span>
+                        <span>60% Very Wet</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Cool</span>
+                        <span>Warm</span>
+                        <span>Hot</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="landmark-footer">
-              <Button
+
+            <div className="full-map-layer-pills" role="group" aria-label="Map view mode">
+              <button
                 type="button"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  setLandmark(null);
-                  setDraft([]);
-                  setDrawing(true);
-                }}
+                className={`full-map-layer-pill ${heatmap === "none" ? "is-active" : ""}`}
+                aria-pressed={heatmap === "none"}
+                onClick={() => setHeatmap("none")}
               >
-                <Pencil size={13} />
-                Draw farm boundary here
-              </Button>
+                <Globe size={13} />
+                <span>Field View</span>
+              </button>
+              <button
+                type="button"
+                className={`full-map-layer-pill ${heatmap === "soil_moisture" ? "is-active" : ""}`}
+                aria-pressed={heatmap === "soil_moisture"}
+                onClick={() => setHeatmap("soil_moisture")}
+              >
+                <Droplets size={13} className="text-sky-600" />
+                <span>Soil Moisture</span>
+              </button>
+              <button
+                type="button"
+                className={`full-map-layer-pill ${heatmap === "ndvi" ? "is-active" : ""}`}
+                aria-pressed={heatmap === "ndvi"}
+                onClick={() => setHeatmap("ndvi")}
+              >
+                <Activity size={13} className="text-emerald-600" />
+                <span>Plant Health</span>
+              </button>
+              <button
+                type="button"
+                className={`full-map-layer-pill ${heatmap === "lst" ? "is-active" : ""}`}
+                aria-pressed={heatmap === "lst"}
+                onClick={() => setHeatmap("lst")}
+              >
+                <ThermometerSun size={13} className="text-amber-600" />
+                <span>Ground Heat</span>
+              </button>
             </div>
           </div>
         </div>
-      )}
+      )
+      }
+
+      {/* Right-side Crop Rotation & Disaster Recovery Drawer */}
+      {
+        rightCardVisible && (
+          <aside
+            ref={rightPanelRef}
+            className="full-map-profile-panel"
+            aria-label="Crop rotation and disaster recovery"
+          >
+            <div className="full-map-profile-head">
+              <div>
+                <div className="drawer-badges-row">
+                  <span className="drawer-badge-nasa">
+                    {drawerTab === "recovery"
+                      ? "REGIONAL DATA · DEMO ESTIMATE"
+                      : "REGIONAL DATA · DEMO OPTIONS"}
+                  </span>
+                  <span className="drawer-badge-engine">
+                    {drawerTab === "recovery" ? "Recovery Engine" : "Rotation Engine"}
+                  </span>
+                  {historical?.sourceUrl && (
+                    <a
+                      href={historical.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="drawer-verify-link"
+                    >
+                      Verify NASA Data <ExternalLink size={11} />
+                    </a>
+                  )}
+                </div>
+                <h3>
+                  {drawerTab === "recovery"
+                    ? "Disaster Recovery & Loss Check"
+                    : "Crop Rotation & Land Advisory"}
+                </h3>
+              </div>
+              <div className="full-map-profile-head-right">
+                <button
+                  type="button"
+                  className="full-map-profile-close"
+                  aria-label="Close advisory panel"
+                  onClick={() => setProfileOpen(false)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="drawer-tab-bar" role="tablist" aria-label="Drawer view">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!recoveryModalOpen && drawerTab === "rotation"}
+                className={!recoveryModalOpen && drawerTab === "rotation" ? "is-active" : ""}
+                onClick={() => {
+                  setRecoveryModalOpen(false);
+                  setDrawerTab("rotation");
+                  onAdvisoryModeChange?.("rotation");
+                }}
+              >
+                Crop Rotation
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={ENABLE_RECOVERY_MODAL ? recoveryModalOpen : drawerTab === "recovery"}
+                className={
+                  (ENABLE_RECOVERY_MODAL ? recoveryModalOpen : drawerTab === "recovery")
+                    ? "is-active"
+                    : ""
+                }
+                onClick={() => {
+                  onOpenRecovery?.();
+                  if (ENABLE_RECOVERY_MODAL) {
+                    setRecoveryModalOpen(true);
+                  } else {
+                    setDrawerTab("recovery");
+                  }
+                  onAdvisoryModeChange?.("recovery");
+                }}
+              >
+                Disaster Recovery
+              </button>
+            </div>
+
+            {drawerTab === "recovery" ? (
+              (() => {
+                const moistureTag =
+                  moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
+                const parsedArea = Number(farm.area);
+                const parsedYield = Number(activeExpectedYield);
+                const parsedPrice = Number(activePrice);
+                const validRecoveryInputs =
+                  Number.isFinite(parsedArea) &&
+                  parsedArea >= 0 &&
+                  Number.isFinite(parsedYield) &&
+                  parsedYield >= 0 &&
+                  Number.isFinite(parsedPrice) &&
+                  parsedPrice >= 0;
+                const estimatedLoss = validRecoveryInputs
+                  ? calculateEstimatedLoss({
+                    areaHectares: parsedArea,
+                    affectedFraction: activeAffected / 100,
+                    expectedYieldKgPerHectare: parsedYield,
+                    yieldLossFraction: activeYieldLoss / 100,
+                    pricePerKg: parsedPrice,
+                  })
+                  : 0;
+                const hazardMeta = RECOVERY_HAZARDS[activeHazard];
+
+                if (!SHOW_COMPACT_RECOVERY_UI && cardRecoveryContent) {
+                  return (
+                    <div className="drawer-card-recovery-wrap">
+                      {cardRecoveryContent}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="drawer-rotation-body">
+                    <div className="drawer-telemetry-grid" aria-label="Farm weather and soil summary">
+                      <button
+                        type="button"
+                        className={`telemetry-tile is-smap is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
+                        aria-pressed={heatmap === "soil_moisture"}
+                        title="Show soil moisture on the map"
+                        onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
+                      >
+                        <div className="telemetry-tile-head">
+                          <Droplets size={14} />
+                          <span>MOISTURE</span>
+                        </div>
+                        <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
+                        <small>{moistureTag}</small>
+                      </button>
+                      <button
+                        type="button"
+                        className={`telemetry-tile is-modis is-action ${heatmap === "lst" ? "is-on" : ""}`}
+                        aria-pressed={heatmap === "lst"}
+                        title="Show ground heat on the map"
+                        onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
+                      >
+                        <div className="telemetry-tile-head">
+                          <ThermometerSun size={14} />
+                          <span>HEAT</span>
+                        </div>
+                        <strong>
+                          {climateLoading
+                            ? "…"
+                            : surfaceTemp !== null
+                              ? `${surfaceTemp.toFixed(1)}°C`
+                              : "—"}
+                        </strong>
+                        <small>Ground Temp</small>
+                      </button>
+                      <div className="telemetry-tile is-gpm">
+                        <div className="telemetry-tile-head">
+                          <CloudRain size={14} />
+                          <span>RAIN</span>
+                        </div>
+                        <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)}mm` : "—"}</strong>
+                        <small>Last 30 Days</small>
+                      </div>
+                      <button
+                        type="button"
+                        className={`telemetry-tile is-ndvi is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
+                        aria-pressed={heatmap === "ndvi"}
+                        title="Show plant health on the map"
+                        onClick={() => setHeatmap(heatmap === "ndvi" ? "none" : "ndvi")}
+                      >
+                        <div className="telemetry-tile-head">
+                          <Sprout size={14} />
+                          <span>HEALTH</span>
+                        </div>
+                        <strong>
+                          {ndviLoading
+                            ? "…"
+                            : modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                              ? modisNdvi.latestNdvi.toFixed(2)
+                              : heatmap === "ndvi"
+                                ? "On"
+                                : "—"}
+                        </strong>
+                        <small>Greenness</small>
+                      </button>
+                    </div>
+
+                    {!SHOW_COMPACT_RECOVERY_UI && legacyRecoveryContent && (
+                      <div className="drawer-legacy-recovery">{legacyRecoveryContent}</div>
+                    )}
+
+                    {SHOW_COMPACT_RECOVERY_UI && (
+                      <>
+                        <div className="drawer-recovery-section">
+                          <div className="drawer-sequence-heading">WHAT HAPPENED ON THIS FIELD?</div>
+                          <div className="drawer-hazard-grid" role="group" aria-label="Select weather event">
+                            {(Object.keys(RECOVERY_HAZARDS) as HazardType[]).map((item) => {
+                              const Icon = RECOVERY_HAZARDS[item].icon;
+                              const active = activeHazard === item;
+                              return (
+                                <button
+                                  key={item}
+                                  type="button"
+                                  className={`drawer-hazard-btn ${active ? "is-active" : ""}`}
+                                  aria-pressed={active}
+                                  onClick={() => setActiveHazard(item)}
+                                >
+                                  <Icon size={15} />
+                                  <span>{item}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="drawer-recovery-note">{hazardMeta.summary}</p>
+                        </div>
+
+                        <div className="drawer-recovery-loss-box">
+                          <div className="drawer-recovery-loss-head">
+                            <span>ESTIMATED INCOME AT RISK · DEMO</span>
+                            <strong>
+                              {validRecoveryInputs ? `${PHP_FORMATTER.format(estimatedLoss)} PHP` : "Check inputs"}
+                            </strong>
+                          </div>
+                          <div className="drawer-recovery-sliders">
+                            <label className="drawer-range-field">
+                              <div>
+                                <span>Area affected</span>
+                                <b>{activeAffected}%</b>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={activeAffected}
+                                onChange={(e) => setActiveAffected(Number(e.target.value))}
+                              />
+                            </label>
+                            <label className="drawer-range-field">
+                              <div>
+                                <span>Expected yield loss</span>
+                                <b>{activeYieldLoss}%</b>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={activeYieldLoss}
+                                onChange={(e) => setActiveYieldLoss(Number(e.target.value))}
+                              />
+                            </label>
+                          </div>
+                          <div className="drawer-recovery-inputs">
+                            <div className="form-field">
+                              <Label htmlFor="drawer-damage-date">Event date</Label>
+                              <Input
+                                id="drawer-damage-date"
+                                type="date"
+                                value={activeDamageDate}
+                                onChange={(e) => setActiveDamageDate(e.target.value)}
+                              />
+                            </div>
+                            <div className="form-field">
+                              <Label htmlFor="drawer-recovery-area">Area (ha)</Label>
+                              <Input
+                                id="drawer-recovery-area"
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={farm.area}
+                                onChange={(e) => onUpdateFarm("area", e.target.value)}
+                              />
+                            </div>
+                            <div className="form-field">
+                              <Label htmlFor="drawer-yield-est">Yield (kg/ha)</Label>
+                              <Input
+                                id="drawer-yield-est"
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={activeExpectedYield}
+                                onChange={(e) => setActiveExpectedYield(e.target.value)}
+                              />
+                            </div>
+                            <div className="form-field">
+                              <Label htmlFor="drawer-price-est">Price (₱/kg)</Label>
+                              <Input
+                                id="drawer-price-est"
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={activePrice}
+                                onChange={(e) => setActivePrice(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <small className="drawer-recovery-foot">
+                            Sample calculation ({farm.area} ha × {activeAffected}% × {activeYieldLoss}% ×{" "}
+                            {activeExpectedYield} kg/ha × ₱{activePrice}/kg). Not a verified claim.
+                          </small>
+                        </div>
+
+                        <div className="drawer-recovery-section">
+                          <div className="drawer-sequence-heading">POSSIBLE NEXT STEPS · {activeHazard.toUpperCase()}</div>
+                          <ol className="drawer-recovery-steps">
+                            {RECOVERY_STEPS[activeHazard].map((step, index) => (
+                              <li key={step}>
+                                <span>{index + 1}</span>
+                                <p>{step}</p>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+
+                        <div className="drawer-recovery-replant">
+                          <div className="drawer-recovery-replant-head">
+                            <ShieldCheck size={14} />
+                            <span>FAST REPLANTING NOTE</span>
+                          </div>
+                          <p>{hazardMeta.replantNote}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()
+            ) : (
+              (() => {
+                const moistureTag =
+                  moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
+                const currentProfile = getCropProfile(farm.crop);
+                const strategies = buildRotationStrategies("Typical", {
+                  ph: farm.ph.trim() ? Number(farm.ph) : NaN,
+                  drainage: farm.drainage,
+                  irrigation: farm.irrigation,
+                  planted: farm.planted,
+                  crop: farm.crop,
+                  previous: farm.previous,
+                  slopePercent: slope,
+                  soil: farm.soil,
+                });
+
+                return (
+                  <div className="drawer-rotation-body">
+                    {ENABLE_FARM_LOT_VERIFICATION && landUseCheck?.tier === "soft_confirm" && landUseCheck.message && (
+                      <div className="drawer-landuse-note" role="note">
+                        {landUseCheck.message}
+                      </div>
+                    )}
+                    <div className="drawer-telemetry-grid" aria-label="Farm weather and soil summary">
+                      <button
+                        type="button"
+                        className={`telemetry-tile is-smap is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
+                        aria-pressed={heatmap === "soil_moisture"}
+                        title="Show soil moisture on the map"
+                        onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
+                      >
+                        <div className="telemetry-tile-head">
+                          <Droplets size={14} />
+                          <span>MOISTURE</span>
+                        </div>
+                        <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
+                        <small>{moistureTag}</small>
+                      </button>
+                      <button
+                        type="button"
+                        className={`telemetry-tile is-modis is-action ${heatmap === "lst" ? "is-on" : ""}`}
+                        aria-pressed={heatmap === "lst"}
+                        title="Show ground heat on the map"
+                        onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
+                      >
+                        <div className="telemetry-tile-head">
+                          <ThermometerSun size={14} />
+                          <span>HEAT</span>
+                        </div>
+                        <strong>
+                          {climateLoading
+                            ? "…"
+                            : surfaceTemp !== null
+                              ? `${surfaceTemp.toFixed(1)}°C`
+                              : "—"}
+                        </strong>
+                        <small>Ground Temp</small>
+                      </button>
+                      <div className="telemetry-tile is-gpm">
+                        <div className="telemetry-tile-head">
+                          <CloudRain size={14} />
+                          <span>RAIN</span>
+                        </div>
+                        <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)}mm` : "—"}</strong>
+                        <small>Last 30 Days</small>
+                      </div>
+                      <button
+                        type="button"
+                        className={`telemetry-tile is-ndvi is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
+                        aria-pressed={heatmap === "ndvi"}
+                        title="Show plant health on the map"
+                        onClick={() => setHeatmap(heatmap === "ndvi" ? "none" : "ndvi")}
+                      >
+                        <div className="telemetry-tile-head">
+                          <Sprout size={14} />
+                          <span>HEALTH</span>
+                        </div>
+                        <strong>
+                          {ndviLoading
+                            ? "…"
+                            : modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                              ? modisNdvi.latestNdvi.toFixed(2)
+                              : heatmap === "ndvi"
+                                ? "On"
+                                : "—"}
+                        </strong>
+                        <small>
+                          {modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                            ? modisNdvi.latestNdvi >= 0.5
+                              ? "Healthy"
+                              : modisNdvi.latestNdvi >= 0.25
+                                ? "Growing"
+                                : "Low"
+                            : "Greenness"}
+                        </small>
+                      </button>
+                    </div>
+
+                    {climateLoading || ndviLoading ? (
+                      <div
+                        className="drawer-rotation-skeleton"
+                        role="status"
+                        aria-live="polite"
+                        aria-label="Loading crop rotation and telemetry analysis"
+                      >
+                        <div className="drawer-current-crop-card drawer-skeleton-card" aria-hidden="true">
+                          <div className="drawer-crop-thumb drawer-skeleton-circle" />
+                          <div className="drawer-current-crop-info">
+                            <div className="drawer-current-crop-top">
+                              <span className="drawer-skeleton-bar" style={{ width: 92, height: 10 }} />
+                              <span className="drawer-skeleton-bar" style={{ width: 88, height: 22, borderRadius: 6 }} />
+                            </div>
+                            <div className="drawer-detection-row">
+                              <span className="drawer-skeleton-bar" style={{ width: 170, height: 18, borderRadius: 999 }} />
+                            </div>
+                            <span className="drawer-skeleton-bar" style={{ width: "68%", height: 14, marginTop: 4 }} />
+                            <span className="drawer-skeleton-bar" style={{ width: "95%", height: 11, marginTop: 6 }} />
+                            <span className="drawer-skeleton-bar" style={{ width: "78%", height: 11, marginTop: 4 }} />
+                            <div className="drawer-ndvi-sparkline">
+                              <span className="drawer-skeleton-bar" style={{ width: 120, height: 18, borderRadius: 4 }} />
+                              <span className="drawer-skeleton-bar" style={{ width: 130, height: 10 }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="drawer-sequence-heading" aria-hidden="true">
+                          <span className="drawer-skeleton-bar" style={{ width: 220, height: 11 }} />
+                        </div>
+
+                        <div className="drawer-timeline" aria-hidden="true">
+                          {[0, 1, 2].map((idx) => (
+                            <div key={idx} className="drawer-timeline-card drawer-skeleton-card">
+                              <div className="drawer-timeline-summary" style={{ cursor: "default" }}>
+                                <span className="timeline-step-num drawer-skeleton-circle" />
+                                <div className="drawer-crop-thumb drawer-skeleton-circle" />
+                                <div className="timeline-summary-copy">
+                                  <div className="timeline-meta-row">
+                                    <span className="drawer-skeleton-bar" style={{ width: 110, height: 10 }} />
+                                    <span className="drawer-skeleton-bar" style={{ width: 86, height: 16, borderRadius: 999 }} />
+                                  </div>
+                                  <span className="drawer-skeleton-bar" style={{ width: "64%", height: 14, marginTop: 4 }} />
+                                  <span className="drawer-skeleton-bar" style={{ width: "92%", height: 11, marginTop: 6 }} />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="drawer-current-crop-card">
+                          <img
+                            src={currentProfile.image}
+                            alt={currentProfile.name}
+                            className="drawer-crop-thumb"
+                          />
+                          <div className="drawer-current-crop-info">
+                            <div className="drawer-current-crop-top">
+                              <span className="drawer-current-eyebrow">CURRENT CROP</span>
+                              <select
+                                aria-label="Change current crop"
+                                className="drawer-inline-select"
+                                value={farm.crop}
+                                onChange={(e) => {
+                                  setManualCropOverride(true);
+                                  onUpdateFarm("crop", e.target.value);
+                                }}
+                              >
+                                {cropOptions.map((crop) => (
+                                  <option key={crop} value={crop}>
+                                    {crop}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="drawer-detection-row">
+                              <span className={`drawer-detection-pill ${manualCropOverride ? "is-manual" : ""}`}>
+                                {manualCropOverride
+                                  ? `Manual override · Satellite: ${cropDetection.detectedCrop} (${cropDetection.confidencePct}%)`
+                                  : `Detected: ${cropDetection.detectedCrop} · ${cropDetection.confidencePct}% (${cropDetection.detectionMethod})`}
+                              </span>
+                            </div>
+                            <strong>
+                              {currentProfile.name} / {currentProfile.localName}{" "}
+                              <em>({currentProfile.scientificName})</em>
+                            </strong>
+                            <p>{currentProfile.soilImpact}</p>
+                            {modisNdvi && modisNdvi.points.length >= 2 && (
+                              <div className="drawer-ndvi-sparkline" title="6-month MODIS MOD13Q1 16-day NDVI trend">
+                                <svg viewBox="0 0 120 22" width="120" height="22" aria-hidden="true">
+                                  <polyline
+                                    fill="none"
+                                    stroke="#15803d"
+                                    strokeWidth="1.75"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    points={modisNdvi.points
+                                      .map((pt, i, arr) => {
+                                        const x = (i / Math.max(1, arr.length - 1)) * 116 + 2;
+                                        const clamped = Math.max(0, Math.min(1, pt.ndvi));
+                                        const y = 20 - clamped * 18;
+                                        return `${x.toFixed(1)},${y.toFixed(1)}`;
+                                      })
+                                      .join(" ")}
+                                  />
+                                </svg>
+                                <span>
+                                  6-mo NDVI ({modisNdvi.points.length} pts · peak {modisNdvi.peakNdvi?.toFixed(2)})
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="drawer-sequence-heading">
+                          <span>THREE DEMO OPTIONS · NOT VALIDATED RECOMMENDATIONS</span>
+                        </div>
+
+                        <div className="drawer-timeline">
+                          {strategies.map((strategy, idx) => {
+                            const isExpanded = expandedStrategyId === strategy.id;
+                            return (
+                              <div
+                                key={strategy.id}
+                                className={`drawer-timeline-card ${isExpanded ? "is-expanded" : ""}`}
+                              >
+                                <button
+                                  type="button"
+                                  className="drawer-timeline-summary"
+                                  onClick={() => setExpandedStrategyId(isExpanded ? "" : strategy.id)}
+                                >
+                                  <span className="timeline-step-num">{idx + 1}</span>
+                                  <img
+                                    src={strategy.nextCropImage}
+                                    alt={strategy.nextCrop}
+                                    className="drawer-crop-thumb"
+                                  />
+                                  <div className="timeline-summary-copy">
+                                    <div className="timeline-meta-row">
+                                      <span className="timeline-window">
+                                        {strategy.plantingWindow} · {strategy.cycleDays}
+                                      </span>
+                                      <span className="timeline-match-pill">
+                                        {Math.round(strategy.total)} / 100 · Demo
+                                      </span>
+                                    </div>
+                                    <strong>
+                                      {strategy.nextCrop} / {strategy.nextCropLocalName}{" "}
+                                      <em>({strategy.nextCropScientificName})</em>
+                                    </strong>
+                                    <p>{strategy.satelliteWhy[0]}</p>
+                                  </div>
+                                  <ChevronDown
+                                    size={15}
+                                    className={`timeline-chevron ${isExpanded ? "is-open" : ""}`}
+                                  />
+                                </button>
+
+                                <div
+                                  className={`drawer-collapse ${isExpanded ? "is-open" : ""}`}
+                                  aria-hidden={!isExpanded}
+                                >
+                                  <div className="drawer-collapse-inner">
+                                    <div className="drawer-timeline-details">
+                                      <div className="drawer-detail-tabs">
+                                        <button
+                                          type="button"
+                                          className={detailTab === "proscons" ? "is-active" : ""}
+                                          onClick={() => setDetailTab("proscons")}
+                                        >
+                                          Pros &amp; Cons
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className={detailTab === "pests" ? "is-active" : ""}
+                                          onClick={() => setDetailTab("pests")}
+                                        >
+                                          Pests &amp; Mitigations ({strategy.pestsAndDiseases.length})
+                                        </button>
+                                      </div>
+
+                                      {detailTab === "proscons" ? (
+                                        <div className="drawer-proscons-grid">
+                                          <div>
+                                            <strong className="pros-title">Pros</strong>
+                                            <ul>
+                                              {strategy.pros.map((item) => (
+                                                <li key={item}>{item}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                          <div>
+                                            <strong className="cons-title">Cons &amp; Trade-offs</strong>
+                                            <ul>
+                                              {strategy.cons.map((item) => (
+                                                <li key={item}>{item}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="drawer-pests-list">
+                                          {strategy.pestsAndDiseases.map((pest) => (
+                                            <div key={pest.name} className="drawer-pest-item">
+                                              <div className="drawer-pest-head">
+                                                <strong>{pest.name}</strong>
+                                                <span
+                                                  className={`risk-pill risk-${pest.riskLevel.toLowerCase()}`}
+                                                >
+                                                  {pest.riskLevel} Risk
+                                                </span>
+                                              </div>
+                                              <small>
+                                                <b>Trigger:</b> {pest.riskWindow}
+                                              </small>
+                                              <small>
+                                                <b>Mitigation:</b> {pest.mitigation}
+                                              </small>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      <div className="drawer-verification-tags">
+                                        {strategy.verificationTags.map((tag) => (
+                                          <span key={tag}>{tag}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()
+            )}
+
+            {drawerTab !== "recovery" && onContinue && (
+              <div className="full-map-profile-foot">
+                <Button type="button" size="sm" onClick={onContinue}>
+                  Continue to crop planning <ArrowRight size={14} />
+                </Button>
+              </div>
+            )}
+          </aside>
+        )}
+
+      {/* Floating Landmark / Location Preview Modal */}
+      {
+        landmark && !drawing && (
+          <div
+            className={`landmark-modal ${isDragging ? "is-dragging" : ""}`}
+            role="dialog"
+            aria-label="Detected location landmark"
+            style={
+              {
+                "--drag-x": `${modalOffset.x}px`,
+                "--drag-y": `${modalOffset.y}px`,
+              } as React.CSSProperties
+            }
+          >
+            <div
+              className="landmark-drag-header"
+              onPointerDown={handleModalDragStart}
+              onPointerMove={handleModalDragMove}
+              onPointerUp={handleModalDragEnd}
+              onPointerCancel={handleModalDragEnd}
+              title="Drag to reposition modal"
+            >
+              <GripHorizontal size={14} />
+              <span>Drag to move</span>
+            </div>
+            <button
+              type="button"
+              className="landmark-close"
+              aria-label="Close landmark preview"
+              onClick={() => {
+                setLandmark(null);
+                setModalOffset({ x: 0, y: 0 });
+              }}
+            >
+              <X size={14} />
+            </button>
+            <div className="landmark-image-wrap">
+              <img
+                src={landmark.photoUrl || bukidnonFields}
+                alt={landmark.photoLabel || "Representative photo of selected area"}
+                title={landmark.photoLabel || "Representative area photo"}
+                onError={(e) => {
+                  if (e.currentTarget.src !== bukidnonFields) {
+                    e.currentTarget.src = bukidnonFields;
+                  }
+                }}
+              />
+              <span className="landmark-badge">
+                <Navigation size={11} />
+                {landmark.source === "gps" ? "YOUR GPS LOCATION" : "PINNED LANDMARK"}
+              </span>
+              {landmark.accuracyMeters !== null && (
+                <span className="landmark-accuracy">±{landmark.accuracyMeters} m</span>
+              )}
+            </div>
+            <div className="landmark-body">
+              <strong>{landmarkLoading ? "Identifying landmark…" : landmark.title}</strong>
+              <span>{landmark.subtitle}</span>
+              <div className="landmark-meta">
+                <span>
+                  {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
+                </span>
+              </div>
+              <div className="landmark-radius-control">
+                <div className="landmark-radius-row">
+                  <label htmlFor="landmark-radius-range">Area radius (drag pin or edge)</label>
+                  <span>
+                    {radiusMeters} m (≈ {((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)}{" "}
+                    ha)
+                  </span>
+                </div>
+                <input
+                  id="landmark-radius-range"
+                  type="range"
+                  min={15}
+                  max={1000}
+                  step={5}
+                  value={Math.min(1000, radiusMeters)}
+                  onChange={(e) => setRadiusMeters(Number(e.target.value))}
+                  className="landmark-slider"
+                />
+              </div>
+              <div className="landmark-footer">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setLandmark(null);
+                    setDraft([]);
+                    setDrawing(true);
+                  }}
+                >
+                  <Pencil size={13} />
+                  Draw farm boundary here
+                </Button>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       {/* Bottom-right coordinates & area pill */}
-      {!drawing && (
-        <div className="full-map-coords-pill" aria-label="Selected field coordinates and area">
-          <MapPin size={13} />
-          <span>
-            {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
-          </span>
-          <span className="full-map-coords-sep" aria-hidden="true">•</span>
-          <span>
-            {boundary.length >= 3
-              ? (() => {
+      {
+        !drawing && (
+          <div
+            className={`full-map-coords-pill ${rightCardVisible ? "is-shifted" : ""}`}
+            aria-label="Selected field coordinates and area"
+          >
+            <MapPin size={13} />
+            <span>
+              {location.latitude.toFixed(5)}°, {location.longitude.toFixed(5)}°
+            </span>
+            <span className="full-map-coords-sep" aria-hidden="true">•</span>
+            <span>
+              {boundary.length >= 3
+                ? (() => {
                   try {
                     return `${measureFarmBoundary(boundary).hectares.toFixed(4)} ha`;
                   } catch {
                     return "Invalid area";
                   }
                 })()
-              : `${((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)} ha`}
-          </span>
-        </div>
-      )}
+                : `${((Math.PI * radiusMeters * radiusMeters) / 10000).toFixed(2)} ha`}
+            </span>
+          </div>
+        )
+      }
 
       {/* Bottom-right zoom controls */}
-      <div className="full-map-zoom">
+      <div className={`full-map-zoom ${rightCardVisible ? "is-shifted" : ""}`}>
         <Button
           type="button"
           size="icon"
@@ -2493,258 +2726,105 @@ export function FullFarmMap({
         </Button>
       </div>
 
-      {/* Left-side vertical heatmap layer switcher */}
-      {!drawing && (
-        <div
-          className={`full-map-heatmap-rail ${
-            !drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block"
-              ? "is-shifted"
-              : ""
-          }`}
-          role="group"
-          aria-label="Map view mode"
-        >
-          {!profileOpen && (
-            <button
-              type="button"
-              className="full-map-rail-btn full-map-rail-reopen"
-              onClick={() => setProfileOpen(true)}
-            >
-              {drawerTab === "recovery" ? <ShieldAlert size={14} /> : <Sprout size={14} />}
-              <span>{drawerTab === "recovery" ? "Open Recovery" : "Open Advisory"}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            className={`full-map-rail-btn ${heatmap === "none" ? "is-active" : ""}`}
-            aria-pressed={heatmap === "none"}
-            onClick={() => setHeatmap("none")}
-          >
-            <Globe size={14} />
-            <span>Field View</span>
-          </button>
-          <button
-            type="button"
-            className={`full-map-rail-btn ${heatmap === "soil_moisture" ? "is-active" : ""}`}
-            aria-pressed={heatmap === "soil_moisture"}
-            onClick={() => setHeatmap("soil_moisture")}
-          >
-            <Droplets size={14} className="text-sky-600" />
-            <span>Soil Moisture</span>
-          </button>
-          <button
-            type="button"
-            className={`full-map-rail-btn ${heatmap === "ndvi" ? "is-active" : ""}`}
-            aria-pressed={heatmap === "ndvi"}
-            onClick={() => setHeatmap("ndvi")}
-          >
-            <Activity size={14} className="text-emerald-600" />
-            <span>Plant Health</span>
-          </button>
-          <button
-            type="button"
-            className={`full-map-rail-btn ${heatmap === "lst" ? "is-active" : ""}`}
-            aria-pressed={heatmap === "lst"}
-            onClick={() => setHeatmap("lst")}
-          >
-            <ThermometerSun size={14} className="text-amber-600" />
-            <span>Ground Heat</span>
-          </button>
-        </div>
-      )}
-
-      {/* Bottom-left legend HUD */}
-      {!drawing && (
-        <div
-          className={`full-map-bottom-hud ${
-            !drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block"
-              ? "is-shifted"
-              : ""
-          }`}
-          aria-label="Map legend"
-        >
-          <div className="full-map-legend-card" role="status" aria-live="polite">
-            <div className="full-map-legend-head">
-              <span
-                className={`full-map-legend-title ${
-                  heatmap === "soil_moisture"
-                    ? "is-smap"
-                    : heatmap === "ndvi"
-                      ? "is-ndvi"
-                      : heatmap === "lst"
-                        ? "is-lst"
-                        : "is-truecolor"
-                }`}
-              >
-                <span className="full-map-legend-dot" aria-hidden="true" />
-                {heatmap === "soil_moisture"
-                  ? "SOIL MOISTURE"
-                  : heatmap === "ndvi"
-                    ? "PLANT HEALTH"
-                    : heatmap === "lst"
-                      ? "GROUND HEAT"
-                      : "YOUR FARM FIELD"}
-              </span>
-              <span className="full-map-legend-source">
-                {heatmap === "soil_moisture"
-                  ? "NASA Soil Data"
-                  : heatmap === "ndvi"
-                    ? "NASA Greenness"
-                    : heatmap === "lst"
-                      ? "NASA Heat Map"
-                      : "Satellite View"}
-              </span>
-            </div>
-            <p className="full-map-legend-desc">
-              {heatmap === "soil_moisture"
-                ? `Soil moisture is ${moisture !== null ? `${moisture}%` : "loading"}. Shows how wet or dry the topsoil is.`
-                : heatmap === "ndvi"
-                  ? `Plant greenness is ${
-                      modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
-                        ? modisNdvi.latestNdvi.toFixed(2)
-                        : "loading"
-                    } for your field. Higher means greener plants.`
-                  : heatmap === "lst"
-                    ? `Ground temperature is ${
-                        surfaceTemp !== null ? `${surfaceTemp.toFixed(1)}°C` : "loading"
-                      }. Shows how warm the soil surface is.`
-                    : `Showing your farm boundary${
-                        farm.place && farm.place !== "Location not identified" ? ` in ${farm.place}` : ""
-                      }. Tap a layer on the left to check soil moisture or plant health.`}
-            </p>
-            {heatmap !== "none" && (
-              <div className="full-map-legend-scale">
-                <div
-                  className="full-map-legend-bar"
-                  style={{
-                    background:
-                      heatmap === "ndvi"
-                        ? "linear-gradient(90deg, #ef4444, #facc15, #16a34a)"
-                        : heatmap === "soil_moisture"
-                          ? "linear-gradient(90deg, #fbbf24, #38bdf8, #1d4ed8)"
-                          : HEATMAP_LAYERS[heatmap].gradient,
-                  }}
-                />
-                <div className="full-map-legend-ticks">
-                  {heatmap === "ndvi" ? (
-                    <>
-                      <span>0.15 Bare Soil</span>
-                      <span>0.50 Growing</span>
-                      <span>0.85 Lush &amp; Green</span>
-                    </>
-                  ) : heatmap === "soil_moisture" ? (
-                    <>
-                      <span>10% Dry</span>
-                      <span>35% Just Right</span>
-                      <span>60% Very Wet</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Cool</span>
-                      <span>Warm</span>
-                      <span>Hot</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Large centered Disaster Recovery modal with backdrop overlay (preserved, hidden for now) */}
-      {ENABLE_RECOVERY_MODAL && recoveryModalOpen && legacyRecoveryContent && (
-        <div
-          className="full-map-recovery-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="recovery-modal-title"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              setRecoveryModalOpen(false);
-              onAdvisoryModeChange?.("rotation");
-            }
-          }}
-        >
-          <div className="full-map-recovery-modal">
-            <div className="full-map-recovery-modal-head">
-              <div>
-                <div className="drawer-badges-row">
-                  <span className="drawer-badge-nasa">REGIONAL DATA · DEMO ESTIMATE</span>
-                  <span className="drawer-badge-engine">Recovery Engine</span>
-                  {farm.place && farm.place !== "Location not identified" && (
-                    <span className="full-map-recovery-place">
-                      <MapPin size={11} />
-                      {farm.place}
-                    </span>
-                  )}
+      {
+        ENABLE_RECOVERY_MODAL && recoveryModalOpen && legacyRecoveryContent && (
+          <div
+            className="full-map-recovery-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recovery-modal-title"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setRecoveryModalOpen(false);
+                onAdvisoryModeChange?.("rotation");
+              }
+            }}
+          >
+            <div className="full-map-recovery-modal">
+              <div className="full-map-recovery-modal-head">
+                <div>
+                  <div className="drawer-badges-row">
+                    <span className="drawer-badge-nasa">REGIONAL DATA · DEMO ESTIMATE</span>
+                    <span className="drawer-badge-engine">Recovery Engine</span>
+                    {farm.place && farm.place !== "Location not identified" && (
+                      <span className="full-map-recovery-place">
+                        <MapPin size={11} />
+                        {farm.place}
+                      </span>
+                    )}
+                  </div>
+                  <h2 id="recovery-modal-title">Disaster Recovery &amp; Loss Check</h2>
                 </div>
-                <h2 id="recovery-modal-title">Disaster Recovery &amp; Loss Check</h2>
+                <button
+                  type="button"
+                  className="full-map-recovery-close"
+                  aria-label="Close disaster recovery modal"
+                  onClick={() => {
+                    setRecoveryModalOpen(false);
+                    onAdvisoryModeChange?.("rotation");
+                  }}
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button
-                type="button"
-                className="full-map-recovery-close"
-                aria-label="Close disaster recovery modal"
-                onClick={() => {
-                  setRecoveryModalOpen(false);
-                  onAdvisoryModeChange?.("rotation");
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="full-map-recovery-modal-body">
-              {legacyRecoveryContent}
+              <div className="full-map-recovery-modal-body">
+                {legacyRecoveryContent}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Centered Farm Lot Verification Loading / Restriction Modal */}
-      {ENABLE_FARM_LOT_VERIFICATION && (checkingLandUse || landUseBlockedMessage) && (
-        <div
-          className={`full-map-center-modal ${landUseBlockedMessage ? "is-error" : ""}`}
-          role={landUseBlockedMessage ? "alertdialog" : "status"}
-          aria-live="polite"
-        >
-          {checkingLandUse ? (
-            <>
-              <Loader2 size={26} className="animate-spin" />
-              <strong>Verifying farm lot…</strong>
-              <span>Checking NASA MODIS NDVI, soil profile, and terrain</span>
-            </>
-          ) : (
-            <>
-              <strong>Selected Area Is Invalid</strong>
-              <p>{landUseBlockedMessage}</p>
-              <Button
-                type="button"
-                size="sm"
-                variant="destructive"
-                onClick={() => {
-                  setLandUseBlockedMessage("");
-                  setDraft([]);
-                  setDrawing(false);
-                }}
-              >
-                Select Another Lot
-              </Button>
-            </>
-          )}
-        </div>
-      )}
+      {
+        ENABLE_FARM_LOT_VERIFICATION && (checkingLandUse || landUseBlockedMessage) && (
+          <div
+            className={`full-map-center-modal ${landUseBlockedMessage ? "is-error" : ""}`}
+            role={landUseBlockedMessage ? "alertdialog" : "status"}
+            aria-live="polite"
+          >
+            {checkingLandUse ? (
+              <>
+                <Loader2 size={26} className="animate-spin" />
+                <strong>Verifying farm lot…</strong>
+                <span>Checking NASA MODIS NDVI, soil profile, and terrain</span>
+              </>
+            ) : (
+              <>
+                <strong>Selected Area Is Invalid</strong>
+                <p>{landUseBlockedMessage}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    setLandUseBlockedMessage("");
+                    setDraft([]);
+                    setDrawing(false);
+                  }}
+                >
+                  Select Another Lot
+                </Button>
+              </>
+            )}
+          </div>
+        )
+      }
 
       {/* Status / error toast */}
-      {(drawing || error) && (
-        <div
-          className={`full-map-hud-bottom ${error ? "is-error" : ""}`}
-          role={error ? "alert" : "status"}
-        >
-          {error
-            ? error
-            : "Click corners on the satellite image to outline your field, then click Finish."}
-        </div>
-      )}
-    </div>
+      {
+        (drawing || error) && (
+          <div
+            className={`full-map-hud-bottom ${error ? "is-error" : ""}`}
+            role={error ? "alert" : "status"}
+          >
+            {error
+              ? error
+              : "Click corners on the satellite image to outline your field, then click Finish."}
+          </div>
+        )
+      }
+    </div >
   );
 }

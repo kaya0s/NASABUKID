@@ -6,6 +6,30 @@ export function placeRequestUrl(location: Coordinates) {
   coordinatesSchema.parse(location);
   return `https://photon.komoot.io/reverse?${new URLSearchParams({ lat: String(location.latitude), lon: String(location.longitude), lang: "en", limit: "1" })}`;
 }
+export function nominatimPlaceRequestUrl(location: Coordinates) {
+  coordinatesSchema.parse(location);
+  return `https://nominatim.openstreetmap.org/reverse?${new URLSearchParams({
+    format: "jsonv2",
+    lat: String(location.latitude),
+    lon: String(location.longitude),
+    zoom: "18",
+    addressdetails: "1",
+    "accept-language": "en",
+  })}`;
+}
+export function joinAddressParts(parts: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of parts) {
+    const trimmed = raw?.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed);
+  }
+  return result.join(", ");
+}
 export function soilRequestUrl(location: Coordinates) {
   coordinatesSchema.parse(location);
   const params = new URLSearchParams({
@@ -24,6 +48,11 @@ const placeSchema = z.object({
         city: z.string().optional(),
         name: z.string().optional(),
         osm_value: z.string().optional(),
+        street: z.string().optional(),
+        locality: z.string().optional(),
+        district: z.string().optional(),
+        suburb: z.string().optional(),
+        county: z.string().optional(),
         state: z.string().optional(),
         country: z.string().optional(),
       }),
@@ -37,7 +66,74 @@ export function parsePlace(payload: unknown) {
     (p?.osm_value === "city" || p?.osm_value === "town" ? p.name?.trim() : undefined);
   if (!municipality)
     throw new Error("No municipality or city name is available for this point. Enter it manually.");
-  return { municipality, region: [p?.state, p?.country].filter(Boolean).join(", ") };
+  const namedPoint =
+    p?.name && p.osm_value !== "city" && p.osm_value !== "town" ? p.name.trim() : undefined;
+  const fullAddress = joinAddressParts([
+    namedPoint,
+    p?.street,
+    p?.locality,
+    p?.district,
+    p?.suburb,
+    municipality,
+    p?.county,
+    p?.state,
+  ]);
+  return {
+    municipality,
+    region: [p?.state, p?.country].filter(Boolean).join(", "),
+    fullAddress: fullAddress || municipality,
+  };
+}
+const nominatimPlaceSchema = z.object({
+  address: z
+    .object({
+      house_number: z.string().optional(),
+      road: z.string().optional(),
+      quarter: z.string().optional(),
+      neighbourhood: z.string().optional(),
+      hamlet: z.string().optional(),
+      isolated_dwelling: z.string().optional(),
+      village: z.string().optional(),
+      suburb: z.string().optional(),
+      city_district: z.string().optional(),
+      town: z.string().optional(),
+      city: z.string().optional(),
+      municipality: z.string().optional(),
+      county: z.string().optional(),
+      province: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+    })
+    .optional(),
+});
+export function parseNominatimPlace(payload: unknown) {
+  const addr = nominatimPlaceSchema.parse(payload).address;
+  if (!addr) throw new Error("No detailed address returned.");
+  const municipality = addr.city?.trim() || addr.town?.trim() || addr.municipality?.trim();
+  const province =
+    addr.province?.trim() ||
+    (addr.state && !addr.state.toLowerCase().includes("region") ? addr.state.trim() : undefined) ||
+    addr.county?.trim() ||
+    addr.state?.trim();
+  const purokOrSitio =
+    addr.quarter?.trim() ||
+    addr.neighbourhood?.trim() ||
+    addr.hamlet?.trim() ||
+    addr.isolated_dwelling?.trim() ||
+    addr.road?.trim();
+  const barangay = addr.village?.trim() || addr.suburb?.trim() || addr.city_district?.trim();
+  const fullAddress = joinAddressParts([
+    purokOrSitio,
+    barangay,
+    municipality,
+    province,
+  ]);
+  if (!fullAddress) throw new Error("No detailed address returned.");
+  return {
+    municipality: municipality || barangay || province || fullAddress,
+    region: joinAddressParts([province, addr.country]),
+    fullAddress,
+  };
 }
 const soilSchema = z.object({
   properties: z.object({
