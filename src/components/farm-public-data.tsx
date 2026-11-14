@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import type { Coordinates } from "@/lib/nasa-power";
 import {
   fetchPublicContext,
+  nominatimPlaceRequestUrl,
+  parseNominatimPlace,
   parsePlace,
   parseSoil,
   placeRequestUrl,
@@ -50,12 +52,44 @@ export function FarmPublicData({
     ...options,
     queryKey: ["farm-place", key],
     queryFn: async ({ signal }) => {
-      const result = await fetchPublicContext(placeRequestUrl(location), signal);
-      return {
-        ...parsePlace(result.payload),
-        sourceUrl: result.sourceUrl,
-        retrievedAt: result.retrievedAt,
-      };
+      const [nominatimOutcome, photonOutcome] = await Promise.allSettled([
+        fetchPublicContext(nominatimPlaceRequestUrl(location), signal),
+        fetchPublicContext(placeRequestUrl(location), signal),
+      ]);
+
+      let photonParsed: ReturnType<typeof parsePlace> | null = null;
+      if (photonOutcome.status === "fulfilled") {
+        try {
+          photonParsed = parsePlace(photonOutcome.value.payload);
+        } catch {
+          photonParsed = null;
+        }
+      }
+
+      if (nominatimOutcome.status === "fulfilled") {
+        try {
+          const detailed = parseNominatimPlace(nominatimOutcome.value.payload);
+          return {
+            municipality: detailed.municipality || photonParsed?.municipality || "",
+            region: detailed.region || photonParsed?.region || "",
+            fullAddress: detailed.fullAddress,
+            sourceUrl: nominatimOutcome.value.sourceUrl,
+            retrievedAt: nominatimOutcome.value.retrievedAt,
+          };
+        } catch {
+          // Fall back to Photon result below if Nominatim lacked structured address fields.
+        }
+      }
+
+      if (photonParsed && photonOutcome.status === "fulfilled") {
+        return {
+          ...photonParsed,
+          sourceUrl: photonOutcome.value.sourceUrl,
+          retrievedAt: photonOutcome.value.retrievedAt,
+        };
+      }
+
+      throw new Error("No municipality or address is available for this point. Enter it manually.");
     },
   });
   const soil = useQuery({
@@ -88,7 +122,8 @@ export function FarmPublicData({
     terrain.data?.slopePercent ?? null,
   );
   useEffect(() => {
-    if (confirmed && ready === key && place.data) apply.current({ place: place.data.municipality });
+    if (confirmed && ready === key && place.data)
+      apply.current({ place: place.data.fullAddress || place.data.municipality });
   }, [confirmed, key, ready, place.data]);
   useEffect(() => {
     if (confirmed && ready === key && soil.data)

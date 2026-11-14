@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { classifyFarmSignals, parsePlace, parseSoil, soilRequestUrl } from "./farm-context";
+import {
+  classifyFarmSignals,
+  parseNominatimPlace,
+  parsePlace,
+  parseSoil,
+  soilRequestUrl,
+} from "./farm-context";
 const layer = (name: string, mean: number | null) => ({
   name,
   unit_measure: { d_factor: 10 },
@@ -28,6 +34,34 @@ describe("Public farm context", () => {
         features: [{ properties: { name: "Village", osm_value: "village", state: "Bukidnon" } }],
       }),
     ).toThrow("No municipality");
+  });
+  it("formats full addresses up to province without appending the country", () => {
+    expect(
+      parsePlace({
+        features: [
+          {
+            properties: {
+              locality: "Purok 2B",
+              district: "Pinatilan",
+              city: "Valencia",
+              state: "Bukidnon",
+              country: "Philippines",
+            },
+          },
+        ],
+      }).fullAddress,
+    ).toBe("Purok 2B, Pinatilan, Valencia, Bukidnon");
+    expect(
+      parseNominatimPlace({
+        address: {
+          quarter: "South Poblacion",
+          village: "Base Camp",
+          town: "Maramag",
+          province: "Bukidnon",
+          country: "Philippines",
+        },
+      }).fullAddress,
+    ).toBe("South Poblacion, Base Camp, Maramag, Bukidnon");
   });
   it("converts pH×10 and texture g/kg to pH and percentages, with uncertainty", () => {
     const data = parseSoil({
