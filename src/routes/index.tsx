@@ -528,8 +528,6 @@ function FieldShift() {
 
   function changeHazard(next: Hazard) {
     setHazard(next);
-    setAffected(HAZARD_RATES[next].affected);
-    setYieldLoss(HAZARD_RATES[next].yieldLoss);
   }
 
   async function sendQuestion(question = chatInput) {
@@ -1463,6 +1461,16 @@ function OverviewPage({
 
   return (
     <div className="agri-overview-container">
+      {/* Quick Actions Row */}
+      <div className="agri-quick-actions">
+        <Button size="lg" className="agri-btn-primary" onClick={onPlan}>
+          <MapPin size={18} /> Set up my farm
+        </Button>
+        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onRecover}>
+          <HeartHandshake size={18} /> Check crop damage
+        </Button>
+      </div>
+
       <OverviewWeatherWidget
         location={location}
         placeName={farm.place}
@@ -2253,13 +2261,15 @@ function RecoveryPage({
               />
             </div>
             <div className="form-field">
-              <Label>Farm area</Label>
-              <div className="input-readonly">
-                <Sprout size={15} /> {farm.area}{" "}
-                <span>
-                  hectares <span className="footer-divider">·</span> from My farm
-                </span>
-              </div>
+              <Label htmlFor="recovery-area">Farm area (ha)</Label>
+              <Input
+                id="recovery-area"
+                type="number"
+                min="0"
+                step="any"
+                value={farm.area}
+                onChange={(e) => onUpdateFarm("area", e.target.value)}
+              />
             </div>
           </div>
           <div className="photo-heading">
