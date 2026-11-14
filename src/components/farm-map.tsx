@@ -5,34 +5,75 @@ import { Label } from "@/components/ui/label";
 import { measureFarmBoundary } from "@/lib/farm-boundary";
 import { coordinatesSchema, type Coordinates } from "@/lib/nasa-power";
 
-type MapInstance = {
-  setView: (point: [number, number], zoom?: number) => MapInstance;
+export type MapInstance = {
+  setView: (point: [number, number], zoom?: number, options?: object) => MapInstance;
+  flyTo?: (point: [number, number], zoom?: number, options?: object) => MapInstance;
   on: (event: string, callback: (event: { latlng: { lat: number; lng: number } }) => void) => void;
   remove: () => void;
+  removeLayer: (layer: unknown) => void;
   fitBounds: (points: [number, number][], options: object) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  invalidateSize: (animate?: boolean) => void;
 };
-type Leaflet = {
+export type TileLayerInstance = {
+  addTo: (map: MapInstance) => TileLayerInstance;
+  on: (event: string, callback: () => void) => TileLayerInstance;
+};
+export type LatLng = { lat: number; lng: number };
+export type MarkerInstance = {
+  addTo: (map: MapInstance) => MarkerInstance;
+  setLatLng: (point: [number, number] | LatLng) => MarkerInstance;
+  on?: (event: string, callback: (event: { latlng: LatLng }) => void) => MarkerInstance;
+  getLatLng?: () => LatLng;
+  bindTooltip?: (content: string, options?: object) => MarkerInstance;
+};
+export type CircleInstance = {
+  addTo: (map: MapInstance) => CircleInstance;
+  setLatLng: (point: [number, number] | LatLng) => CircleInstance;
+  setRadius: (radius: number) => CircleInstance;
+  getRadius?: () => number;
+  getLatLng?: () => LatLng;
+};
+export type Leaflet = {
   map: (element: HTMLElement, options: object) => MapInstance;
-  tileLayer: (
-    url: string,
-    options: object,
-  ) => { addTo: (map: MapInstance) => { on: (event: string, callback: () => void) => void } };
+  tileLayer: (url: string, options: object) => TileLayerInstance;
   polygon: (
     points: [number, number][],
     options: object,
   ) => { addTo: (map: MapInstance) => { setLatLngs: (points: [number, number][]) => void } };
+  marker?: (point: [number, number] | LatLng, options?: object) => MarkerInstance;
+  circleMarker?: (point: [number, number] | LatLng, options?: object) => MarkerInstance;
+  circle?: (point: [number, number] | LatLng, options?: object) => CircleInstance;
+  divIcon?: (options: object) => unknown;
+  latLng?: (lat: number, lng: number) => { distanceTo: (other: LatLng) => number; lat: number; lng: number };
 };
 let leafletPromise: Promise<Leaflet> | undefined;
 // shortcut: Leaflet is CDN-hosted; bundle it when package registry access is available.
-function loadLeaflet() {
+export function loadLeaflet() {
   if (!leafletPromise)
     leafletPromise = new Promise<Leaflet>((resolve, reject) => {
-      const css = document.createElement("link");
-      css.rel = "stylesheet";
-      css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      css.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
-      css.crossOrigin = "anonymous";
-      document.head.append(css);
+      const cssHref = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      const existingCss = document.querySelector(`link[href="${cssHref}"]`) as HTMLLinkElement | null;
+      let cssReady = Boolean(existingCss?.sheet);
+      if (!existingCss) {
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = cssHref;
+        css.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
+        css.crossOrigin = "anonymous";
+        css.onload = () => {
+          cssReady = true;
+        };
+        css.onerror = () => {
+          cssReady = true;
+        };
+        document.head.append(css);
+      } else if (!cssReady) {
+        existingCss.addEventListener("load", () => {
+          cssReady = true;
+        });
+      }
       const script = document.createElement("script");
       script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
       script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=";
@@ -43,7 +84,9 @@ function loadLeaflet() {
       );
       script.onload = () => {
         window.clearTimeout(timeout);
-        resolve((window as unknown as { L: Leaflet }).L);
+        const finish = () => resolve((window as unknown as { L: Leaflet }).L);
+        if (cssReady) finish();
+        else window.setTimeout(finish, 50);
       };
       script.onerror = () => {
         window.clearTimeout(timeout);

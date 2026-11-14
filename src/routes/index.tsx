@@ -9,7 +9,7 @@ import {
   Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, Bot,
   CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, CloudDrizzle, CloudSun,
   Compass, Droplets, FileText, FlaskConical, Flower2, HeartHandshake, ImagePlus, Leaf,
-  MapPin, Menu, MessageCircle, Mountain, RotateCcw, Send, ShieldCheck, Sprout, Sun,
+  Map, MapPin, Menu, MessageCircle, Mountain, RotateCcw, Send, ShieldCheck, Sprout, Sun,
   Thermometer, Upload, Waves, Wind, X,
 } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FarmMap } from "@/components/farm-map";
+import { FullFarmMap } from "@/components/full-farm-map";
 import { HistoricalWeatherPanel } from "@/components/historical-weather";
 import { coordinatesSchema, type Coordinates, type HistoricalWeather } from "@/lib/nasa-power";
 import {
@@ -41,13 +42,14 @@ export const Route = createFileRoute("/")({
   component: FieldShift,
 });
 
-type Page = "overview" | "farm" | "prevention" | "recovery" | "evidence" | "chat";
+type Page = "overview" | "farm" | "fullmap" | "prevention" | "recovery" | "evidence" | "chat";
 type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
 type Farm = { place: string; area: string; crop: string; previous: string; ph: string; soil: string; irrigation: string; drainage: string; planted: string };
 type ChatMessage = { role: "assistant" | "user"; text: string };
 const NAV: Array<{ id: Page; label: string; icon: typeof Leaf; section: string }> = [
   { id: "overview", label: "Overview", icon: Compass, section: "WORKSPACE" },
   { id: "farm", label: "My farm", icon: Sprout, section: "WORKSPACE" },
+  { id: "fullmap", label: "Full Map (New)", icon: Map, section: "WORKSPACE" },
   { id: "prevention", label: "Crop planning", icon: Flower2, section: "WORKSPACE" },
   { id: "recovery", label: "Damage recovery", icon: HeartHandshake, section: "WORKSPACE" },
   { id: "evidence", label: "Evidence & sources", icon: FileText, section: "INSIGHTS" },
@@ -195,7 +197,7 @@ function FieldShift() {
     setChatInput("");
   }
 
-  const pageTitle: Record<Page, string> = { overview: "Your farm, better prepared.", farm: "A little about your farm.", prevention: "Plan for the season ahead.", recovery: "Let’s understand what happened.", evidence: "See what’s behind each score.", chat: "A field-side sounding board." };
+  const pageTitle: Record<Page, string> = { overview: "Your farm, better prepared.", farm: "A little about your farm.", fullmap: "Interactive satellite field map.", prevention: "Plan for the season ahead.", recovery: "Let’s understand what happened.", evidence: "See what’s behind each score.", chat: "A field-side sounding board." };
 
   return (
     <div className="app-shell">
@@ -215,6 +217,15 @@ function FieldShift() {
 
       <main className="main-area">
         <header className="topbar"><div className="topbar-left"><Button size="icon" variant="ghost" className="mobile-menu" aria-label="Open menu" onClick={() => setMobileNavOpen(true)}><Menu /></Button><span className="crumb">FIELD DESK</span><ChevronRight size={14} className="crumb-divider" /><span className="crumb-current">{NAV.find((item) => item.id === page)?.label ?? "Overview"}</span></div><div className="topbar-right"><span className="demo-label"><span className="demo-dot" /> DEMO SCORES</span><span className="user-chip"><span className="user-avatar">B</span><span className="user-name">Bukidnon grower</span><ChevronDown size={14} /></span></div></header>
+        {page === "fullmap" ? (
+          <FullFarmMap
+            location={location}
+            boundary={boundary}
+            onBoundary={updateBoundary}
+            onChange={updateLocation}
+            areaLabel={farm.area}
+          />
+        ) : (
         <div className="page-wrap">
           <div className="page-intro"><div><span className="eyebrow">FIELD NOTES <span className="eyebrow-dot" /> BUKIDNON, PHILIPPINES</span><h1>{pageTitle[page]}</h1><p className="intro-copy">{page === "overview" ? "Grounded crop planning for a changing climate — shaped around the way your farm grows." : page === "farm" ? "Every field is different. Let’s make these sample recommendations feel a little more like yours." : page === "prevention" ? "Explore historical NASA weather for your farm and compare illustrative crop rotations." : page === "recovery" ? "Share a little about the damage. This sample estimate is a starting point for your next steps." : page === "evidence" ? "A transparent look at sample scoring, calculations, and the resources that could inform a real plan." : page === "chat" ? "Have a question about your sample plan? Let’s think it through together." : ""}</p></div>{page !== "overview" && <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}><ArrowLeft size={16} /> Overview</Button>}</div>
 
@@ -232,6 +243,7 @@ function FieldShift() {
           <ApiSources />
           <footer className="page-footer"><span><Sprout size={14} /> Made for the seasons ahead.</span><span>FieldShift AI <span className="footer-divider">·</span> NASA Space Apps demo <span className="footer-divider">·</span> Historical NASA access · Demo scores · No AI connected</span></footer>
         </div>
+        )}
       </main>
 
       <Dialog open={evidenceOpen} onOpenChange={setEvidenceOpen}>
