@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, BadgeCheck, Check, ChevronDown, ExternalLink, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, Sprout, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, Globe, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, Sprout, ThermometerSun, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,19 @@ import {
   type TileLayerInstance,
 } from "@/components/farm-map";
 import { measureFarmBoundary } from "@/lib/farm-boundary";
-import { buildRotationStrategies, getCropProfile } from "@/lib/fieldshift-demo";
-import { summarizeWeather, type Coordinates, type HistoricalWeather } from "@/lib/nasa-power";
+import { checkFarmLandUse, type LandUseCheckResult } from "@/lib/farm-context";
+import { buildRotationStrategies, detectPlantedCrop, getCropProfile } from "@/lib/fieldshift-demo";
+import {
+  fetchRecentModisNdvi,
+  summarizeWeather,
+  type Coordinates,
+  type HistoricalWeather,
+  type ModisNdviSeries,
+} from "@/lib/nasa-power";
 
 type MapStyle = "satellite" | "street";
 type HeatmapLayer = "none" | "lst" | "soil_moisture" | "ndvi";
+const ENABLE_FARM_LOT_VERIFICATION = false;
 
 function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371000;
@@ -93,6 +101,60 @@ type SearchResult = {
   longitude: number;
 };
 
+const OLC_ALPHABET = "23456789CFGHJMPQRVWX";
+
+function decodePlusCode(
+  input: string,
+  refLat: number,
+  refLon: number,
+): { latitude: number; longitude: number; code: string } | null {
+  const token = input.trim().toUpperCase().split(/[,\s]+/)[0] ?? "";
+  if (!/^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}$/.test(token)) {
+    return null;
+  }
+  const [beforePlus, afterPlus] = token.split("+");
+  if (!beforePlus || !afterPlus) return null;
+
+  let fullBefore = beforePlus;
+  if (beforePlus.length === 4) {
+    const latVal = Math.min(89.999, Math.max(-90, refLat)) + 90;
+    const lonVal = Math.min(179.999, Math.max(-180, refLon)) + 180;
+    const p1Lat = Math.floor(latVal / 20);
+    const p1Lon = Math.floor(lonVal / 20);
+    const p2Lat = Math.floor(latVal % 20);
+    const p2Lon = Math.floor(lonVal % 20);
+    fullBefore = `${OLC_ALPHABET[p1Lat]}${OLC_ALPHABET[p1Lon]}${OLC_ALPHABET[p2Lat]}${OLC_ALPHABET[p2Lon]}${beforePlus}`;
+  }
+  if (fullBefore.length !== 8) return null;
+
+  const fullCode = `${fullBefore}${afterPlus}`;
+  const res = [20, 1, 0.05, 0.0025, 0.000125];
+  let lat = -90;
+  let lon = -180;
+  for (let i = 0; i < 5; i++) {
+    const latChar = OLC_ALPHABET.indexOf(fullCode[i * 2]!);
+    const lonChar = OLC_ALPHABET.indexOf(fullCode[i * 2 + 1]!);
+    if (latChar < 0 || lonChar < 0) return null;
+    lat += latChar * res[i]!;
+    lon += lonChar * res[i]!;
+  }
+  let latHeight = res[4]!;
+  let lonWidth = res[4]!;
+  if (fullCode.length === 11) {
+    const extra = OLC_ALPHABET.indexOf(fullCode[10]!);
+    if (extra < 0) return null;
+    latHeight /= 5;
+    lonWidth /= 4;
+    lat += Math.floor(extra / 4) * latHeight;
+    lon += (extra % 4) * lonWidth;
+  }
+  return {
+    latitude: Number((lat + latHeight / 2).toFixed(7)),
+    longitude: Number((lon + lonWidth / 2).toFixed(7)),
+    code: `${fullBefore}+${afterPlus}`,
+  };
+}
+
 async function searchLocations(
   query: string,
   nearLat: number,
@@ -101,6 +163,18 @@ async function searchLocations(
 ): Promise<SearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+
+  const plusMatch = decodePlusCode(trimmed, nearLat, nearLon);
+  if (plusMatch) {
+    return [
+      {
+        title: `Plus Code ${plusMatch.code}`,
+        subtitle: `Jump to ${plusMatch.latitude.toFixed(5)}°, ${plusMatch.longitude.toFixed(5)}°`,
+        latitude: plusMatch.latitude,
+        longitude: plusMatch.longitude,
+      },
+    ];
+  }
 
   // Match direct coordinates: e.g. "8.32629, 124.97766" or "8.32629 124.97766"
   const coordMatch = trimmed.match(/^([-+]?\d{1,2}(?:\.\d+)?)[,\s]+([-+]?\d{1,3}(?:\.\d+)?)$/);
@@ -371,6 +445,9 @@ export function FullFarmMap({
   const [loading, setLoading] = useState(true);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
+  const [landUseCheck, setLandUseCheck] = useState<LandUseCheckResult | null>(null);
+  const [checkingLandUse, setCheckingLandUse] = useState(false);
+  const [landUseBlockedMessage, setLandUseBlockedMessage] = useState("");
   const [landmark, setLandmark] = useState<LandmarkInfo | null>(null);
   const [landmarkLoading, setLandmarkLoading] = useState(false);
   const [radiusMeters, setRadiusMeters] = useState(100);
@@ -380,6 +457,59 @@ export function FullFarmMap({
   const [drawerTab, setDrawerTab] = useState<"rotation" | "profile">("rotation");
   const [expandedStrategyId, setExpandedStrategyId] = useState<string>("legume-break");
   const [detailTab, setDetailTab] = useState<"proscons" | "pests">("proscons");
+  const [modisNdvi, setModisNdvi] = useState<ModisNdviSeries | null>(null);
+  const [ndviLoading, setNdviLoading] = useState(false);
+  const [manualCropOverride, setManualCropOverride] = useState(false);
+
+  const climateSummary = historical ? summarizeWeather(historical.days) : null;
+  const moisture = historical?.soilMoisturePercent ?? null;
+  const surfaceTemp = historical?.surfaceTempC ?? climateSummary?.temperature ?? null;
+  const rain30 = historical?.recent30dRainfallMm ?? climateSummary?.rainfall ?? null;
+  const elev = terrain?.elevation ?? historical?.nasaElevationM ?? null;
+  const slope = terrain?.slopePercent ?? null;
+  const cropDetection = detectPlantedCrop({
+    elevationM: elev,
+    moisturePct: moisture,
+    recent30dRainfallMm: rain30,
+    municipality: farm.place,
+    ndviPoints: modisNdvi?.points ?? [],
+  });
+
+  useEffect(() => {
+    setManualCropOverride(false);
+    if (boundary.length < 3) {
+      setModisNdvi(null);
+      return;
+    }
+    const controller = new AbortController();
+    setNdviLoading(true);
+    void fetchRecentModisNdvi(location, controller.signal).then((series) => {
+      if (controller.signal.aborted) return;
+      setModisNdvi(series);
+      setNdviLoading(false);
+    });
+    return () => controller.abort();
+  }, [location.latitude, location.longitude, boundary.length]);
+
+  useEffect(() => {
+    if (
+      !manualCropOverride &&
+      boundary.length >= 3 &&
+      profileOpen &&
+      cropOptions.includes(cropDetection.detectedCrop) &&
+      farm.crop !== cropDetection.detectedCrop
+    ) {
+      onUpdateFarm("crop", cropDetection.detectedCrop);
+    }
+  }, [
+    manualCropOverride,
+    boundary.length,
+    profileOpen,
+    cropDetection.detectedCrop,
+    cropOptions,
+    farm.crop,
+    onUpdateFarm,
+  ]);
   const [modalOffset, setModalOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
@@ -503,7 +633,7 @@ export function FullFarmMap({
     if (!dragStartRef.current) return;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
+    } catch { }
     dragStartRef.current = null;
     setIsDragging(false);
   };
@@ -526,7 +656,10 @@ export function FullFarmMap({
   const leafletRef = useRef<Leaflet | null>(null);
   const activeLayerRef = useRef<TileLayerInstance | null>(null);
   const heatmapLayerRef = useRef<TileLayerInstance | null>(null);
-  const polygonRef = useRef<{ setLatLngs: (points: [number, number][]) => void } | null>(null);
+  const polygonRef = useRef<{
+    setLatLngs: (points: [number, number][]) => void;
+    setStyle?: (options: object) => void;
+  } | null>(null);
   const markerRef = useRef<MarkerInstance | null>(null);
   const edgeMarkerRef = useRef<MarkerInstance | null>(null);
   const accuracyCircleRef = useRef<CircleInstance | null>(null);
@@ -581,7 +714,7 @@ export function FullFarmMap({
         const instance = L.map(containerRef.current, {
           scrollWheelZoom: true,
           zoomControl: false,
-          preferCanvas: true,
+          preferCanvas: false,
           fadeAnimation: true,
           zoomAnimation: true,
         }).setView(point, 14);
@@ -594,10 +727,12 @@ export function FullFarmMap({
         polygonRef.current = L.polygon(
           visiblePoints.current.map((p) => [p.latitude, p.longitude]),
           {
+            className: "full-map-plot-polygon",
             color: "#4ade80",
             weight: 3,
             fillColor: "#22c55e",
-            fillOpacity: 0.25,
+            fillOpacity: 0.3,
+            lineJoin: "round",
             interactive: false,
           },
         ).addTo(instance);
@@ -698,6 +833,8 @@ export function FullFarmMap({
           if (drawingRef.current) {
             setDraft((points) => (points.length < 200 ? [...points, clicked] : points));
           } else if (!savedBoundary.current.length) {
+            setError("");
+            setLandUseBlockedMessage("");
             accuracyCircleRef.current?.setLatLng([clicked.latitude, clicked.longitude]);
             accuracyCircleRef.current?.setRadius(radiusRef.current);
             edgeMarkerRef.current?.setLatLng(
@@ -770,6 +907,14 @@ export function FullFarmMap({
         setError("Some NASA heatmap tiles could not load at this zoom/area.");
       }).addTo(map);
     }
+
+    const polygonStyles: Record<HeatmapLayer, { color: string; fillColor: string; fillOpacity: number; weight: number }> = {
+      none: { color: "#4ade80", fillColor: "#22c55e", fillOpacity: 0.3, weight: 3 },
+      soil_moisture: { color: "#38bdf8", fillColor: "#0284c7", fillOpacity: 0.42, weight: 3 },
+      ndvi: { color: "#a3e635", fillColor: "#16a34a", fillOpacity: 0.42, weight: 3 },
+      lst: { color: "#f59e0b", fillColor: "#ea580c", fillOpacity: 0.38, weight: 3 },
+    };
+    polygonRef.current?.setStyle?.(polygonStyles[heatmap]);
   }, [heatmap]);
 
   useEffect(() => {
@@ -841,6 +986,12 @@ export function FullFarmMap({
       framePointInLeftArea(map, next.latitude, next.longitude, 17);
     }
 
+    if (accuracy !== null && accuracy > 1000) {
+      setError(
+        `Approximate network location (~${(accuracy / 1000).toFixed(1)} km). Click the map or search a Plus Code to set your exact pin.`,
+      );
+    }
+
     showLandmarkFor(next.latitude, next.longitude, "gps", accuracy);
   }
 
@@ -851,7 +1002,7 @@ export function FullFarmMap({
     }
     setLocating(true);
     setError("");
-    // Try high-accuracy GPS first, then gracefully fall back to fast network positioning
+    // Request a fresh high-accuracy fix first (maximumAge: 0 avoids stale IP/Wi-Fi caches)
     navigator.geolocation.getCurrentPosition(
       applyDetectedPosition,
       (err) => {
@@ -866,10 +1017,10 @@ export function FullFarmMap({
             setLocating(false);
             setError("Unable to detect your location. Click anywhere on the map to pin your farm.");
           },
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 },
         );
       },
-      { enableHighAccuracy: true, timeout: 7000, maximumAge: 15000 },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   }
 
@@ -1105,21 +1256,48 @@ export function FullFarmMap({
               <Button
                 type="button"
                 size="sm"
-                disabled={draft.length < 3}
-                onClick={() => {
+                disabled={draft.length < 3 || checkingLandUse}
+                onClick={async () => {
                   try {
                     const measured = measureFarmBoundary(draft);
+                    if (ENABLE_FARM_LOT_VERIFICATION) {
+                      const centroid = {
+                        latitude:
+                          measured.points.reduce((sum, p) => sum + p.latitude, 0) /
+                          measured.points.length,
+                        longitude:
+                          measured.points.reduce((sum, p) => sum + p.longitude, 0) /
+                          measured.points.length,
+                      };
+                      setCheckingLandUse(true);
+                      setLandUseBlockedMessage("");
+                      const landUse = await checkFarmLandUse(centroid, undefined, measured.points);
+                      setCheckingLandUse(false);
+                      if (landUse.tier === "hard_block") {
+                        setLandUseCheck(landUse);
+                        setLandUseBlockedMessage(
+                          landUse.message ??
+                            "The selected area is invalid (urban structure, building, or water body detected). Please select an agricultural parcel.",
+                        );
+                        setProfileOpen(false);
+                        onBoundary([]);
+                        return;
+                      }
+                      setLandUseCheck(landUse);
+                    }
+                    setLandUseBlockedMessage("");
                     onBoundary(measured.points);
                     setDrawing(false);
                     setProfileOpen(true);
                     setError("");
                   } catch (err) {
+                    setCheckingLandUse(false);
                     setError(err instanceof Error ? err.message : "Invalid boundary.");
                   }
                 }}
               >
-                <Check size={14} />
-                Finish ({draft.length})
+                {checkingLandUse ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {checkingLandUse ? "Checking lot…" : `Finish (${draft.length})`}
               </Button>
               <Button
                 type="button"
@@ -1150,7 +1328,7 @@ export function FullFarmMap({
       </div>
 
       {/* Right-side Plot Intelligence & Farm Profile Drawer */}
-      {boundary.length >= 3 && !drawing && profileOpen && (
+      {boundary.length >= 3 && !drawing && profileOpen && !checkingLandUse && landUseCheck?.tier !== "hard_block" && (
         <aside className="full-map-profile-panel" aria-label="Plot intelligence and farm profile">
           <div className="full-map-profile-head">
             <div>
@@ -1205,14 +1383,8 @@ export function FullFarmMap({
 
           {drawerTab === "rotation" ? (
             (() => {
-              const climateSummary = historical ? summarizeWeather(historical.days) : null;
-              const moisture = historical?.soilMoisturePercent ?? null;
               const moistureTag =
-                moisture === null ? "Awaiting" : moisture < 20 ? "Dry" : moisture > 65 ? "Wet" : "Optimal";
-              const surfaceTemp = historical?.surfaceTempC ?? climateSummary?.temperature ?? null;
-              const rain30 = historical?.recent30dRainfallMm ?? climateSummary?.rainfall ?? null;
-              const elev = terrain?.elevation ?? historical?.nasaElevationM ?? null;
-              const slope = terrain?.slopePercent ?? null;
+                moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
               const currentProfile = getCropProfile(farm.crop);
               const strategies = buildRotationStrategies("Typical", {
                 ph: farm.ph.trim() ? Number(farm.ph) : NaN,
@@ -1227,55 +1399,135 @@ export function FullFarmMap({
 
               return (
                 <div className="drawer-rotation-body">
-                  <div className="drawer-telemetry-grid" aria-label="NASA plot telemetry">
+                  {ENABLE_FARM_LOT_VERIFICATION && landUseCheck?.tier === "soft_confirm" && landUseCheck.message && (
+                    <div className="drawer-landuse-note" role="note">
+                      {landUseCheck.message}
+                    </div>
+                  )}
+                  <div className="drawer-telemetry-grid" aria-label="Farm weather and soil summary">
                     <button
                       type="button"
-                      className={`telemetry-tile is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
+                      className={`telemetry-tile is-smap is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
                       aria-pressed={heatmap === "soil_moisture"}
-                      title="Toggle NASA SMAP soil moisture map layer"
+                      title="Show soil moisture on the map"
                       onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
                     >
-                      <span>SMAP / GWETTOP</span>
+                      <div className="telemetry-tile-head">
+                        <Droplets size={14} />
+                        <span>MOISTURE</span>
+                      </div>
                       <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
-                      <small>{moistureTag} · map layer</small>
+                      <small>{moistureTag}</small>
                     </button>
                     <button
                       type="button"
-                      className={`telemetry-tile is-action ${heatmap === "lst" ? "is-on" : ""}`}
+                      className={`telemetry-tile is-modis is-action ${heatmap === "lst" ? "is-on" : ""}`}
                       aria-pressed={heatmap === "lst"}
-                      title="Toggle NASA MODIS land surface temperature map layer"
+                      title="Show ground heat on the map"
                       onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
                     >
-                      <span>MODIS / TS</span>
+                      <div className="telemetry-tile-head">
+                        <ThermometerSun size={14} />
+                        <span>HEAT</span>
+                      </div>
                       <strong>
                         {climateLoading ? "…" : surfaceTemp !== null ? `${surfaceTemp.toFixed(1)}°C` : "—"}
                       </strong>
-                      <small>Surface · map layer</small>
+                      <small>Ground Temp</small>
                     </button>
+                    <div className="telemetry-tile is-gpm">
+                      <div className="telemetry-tile-head">
+                        <CloudRain size={14} />
+                        <span>RAIN</span>
+                      </div>
+                      <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)}mm` : "—"}</strong>
+                      <small>Last 30 Days</small>
+                    </div>
                     <button
                       type="button"
-                      className={`telemetry-tile is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
+                      className={`telemetry-tile is-ndvi is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
                       aria-pressed={heatmap === "ndvi"}
-                      title="Toggle NASA MODIS NDVI vegetation map layer (visual only, no per-plot value)"
+                      title="Show plant health on the map"
                       onClick={() => setHeatmap(heatmap === "ndvi" ? "none" : "ndvi")}
                     >
-                      <span>MODIS / NDVI</span>
-                      <strong>{heatmap === "ndvi" ? "On" : "View"}</strong>
-                      <small>Vegetation · map only</small>
+                      <div className="telemetry-tile-head">
+                        <Sprout size={14} />
+                        <span>HEALTH</span>
+                      </div>
+                      <strong>
+                        {ndviLoading
+                          ? "…"
+                          : modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                            ? modisNdvi.latestNdvi.toFixed(2)
+                            : heatmap === "ndvi"
+                              ? "On"
+                              : "—"}
+                      </strong>
+                      <small>
+                        {modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                          ? modisNdvi.latestNdvi >= 0.5
+                            ? "Healthy"
+                            : modisNdvi.latestNdvi >= 0.25
+                              ? "Growing"
+                              : "Low"
+                          : "Greenness"}
+                      </small>
                     </button>
-                    <div className="telemetry-tile">
-                      <span>GPM / 30D RAIN</span>
-                      <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)} mm` : "—"}</strong>
-                      <small>Precipitation</small>
-                    </div>
-                    <div className="telemetry-tile">
-                      <span>SRTM / SLOPE</span>
-                      <strong>{elev !== null ? `${Math.round(elev)} m` : "—"}</strong>
-                      <small>{slope !== null ? `${slope.toFixed(1)}% slope` : "Terrain"}</small>
-                    </div>
                   </div>
 
-                  <div className="drawer-current-crop-card">
+                  {climateLoading || ndviLoading ? (
+                    <div
+                      className="drawer-rotation-skeleton"
+                      role="status"
+                      aria-live="polite"
+                      aria-label="Loading crop rotation and telemetry analysis"
+                    >
+                      <div className="drawer-current-crop-card drawer-skeleton-card" aria-hidden="true">
+                        <div className="drawer-crop-thumb drawer-skeleton-circle" />
+                        <div className="drawer-current-crop-info">
+                          <div className="drawer-current-crop-top">
+                            <span className="drawer-skeleton-bar" style={{ width: 92, height: 10 }} />
+                            <span className="drawer-skeleton-bar" style={{ width: 88, height: 22, borderRadius: 6 }} />
+                          </div>
+                          <div className="drawer-detection-row">
+                            <span className="drawer-skeleton-bar" style={{ width: 170, height: 18, borderRadius: 999 }} />
+                          </div>
+                          <span className="drawer-skeleton-bar" style={{ width: "68%", height: 14, marginTop: 4 }} />
+                          <span className="drawer-skeleton-bar" style={{ width: "95%", height: 11, marginTop: 6 }} />
+                          <span className="drawer-skeleton-bar" style={{ width: "78%", height: 11, marginTop: 4 }} />
+                          <div className="drawer-ndvi-sparkline">
+                            <span className="drawer-skeleton-bar" style={{ width: 120, height: 18, borderRadius: 4 }} />
+                            <span className="drawer-skeleton-bar" style={{ width: 130, height: 10 }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="drawer-sequence-heading" aria-hidden="true">
+                        <span className="drawer-skeleton-bar" style={{ width: 220, height: 11 }} />
+                      </div>
+
+                      <div className="drawer-timeline" aria-hidden="true">
+                        {[0, 1, 2].map((idx) => (
+                          <div key={idx} className="drawer-timeline-card drawer-skeleton-card">
+                            <div className="drawer-timeline-summary" style={{ cursor: "default" }}>
+                              <span className="timeline-step-num drawer-skeleton-circle" />
+                              <div className="drawer-crop-thumb drawer-skeleton-circle" />
+                              <div className="timeline-summary-copy">
+                                <div className="timeline-meta-row">
+                                  <span className="drawer-skeleton-bar" style={{ width: 110, height: 10 }} />
+                                  <span className="drawer-skeleton-bar" style={{ width: 86, height: 16, borderRadius: 999 }} />
+                                </div>
+                                <span className="drawer-skeleton-bar" style={{ width: "64%", height: 14, marginTop: 4 }} />
+                                <span className="drawer-skeleton-bar" style={{ width: "92%", height: 11, marginTop: 6 }} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="drawer-current-crop-card">
                     <img
                       src={currentProfile.image}
                       alt={currentProfile.name}
@@ -1285,10 +1537,13 @@ export function FullFarmMap({
                       <div className="drawer-current-crop-top">
                         <span className="drawer-current-eyebrow">CURRENT CROP</span>
                         <select
-                          aria-label="Quick switch current crop"
+                          aria-label="Change current crop"
                           className="drawer-inline-select"
                           value={farm.crop}
-                          onChange={(e) => onUpdateFarm("crop", e.target.value)}
+                          onChange={(e) => {
+                            setManualCropOverride(true);
+                            onUpdateFarm("crop", e.target.value);
+                          }}
                         >
                           {cropOptions.map((crop) => (
                             <option key={crop} value={crop}>
@@ -1297,11 +1552,42 @@ export function FullFarmMap({
                           ))}
                         </select>
                       </div>
+                      <div className="drawer-detection-row">
+                        <span className={`drawer-detection-pill ${manualCropOverride ? "is-manual" : ""}`}>
+                          {manualCropOverride
+                            ? `Manual override · Satellite: ${cropDetection.detectedCrop} (${cropDetection.confidencePct}%)`
+                            : `Detected: ${cropDetection.detectedCrop} · ${cropDetection.confidencePct}% (${cropDetection.detectionMethod})`}
+                        </span>
+                      </div>
                       <strong>
                         {currentProfile.name} / {currentProfile.localName}{" "}
                         <em>({currentProfile.scientificName})</em>
                       </strong>
                       <p>{currentProfile.soilImpact}</p>
+                      {modisNdvi && modisNdvi.points.length >= 2 && (
+                        <div className="drawer-ndvi-sparkline" title="6-month MODIS MOD13Q1 16-day NDVI trend">
+                          <svg viewBox="0 0 120 22" width="120" height="22" aria-hidden="true">
+                            <polyline
+                              fill="none"
+                              stroke="#15803d"
+                              strokeWidth="1.75"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              points={modisNdvi.points
+                                .map((pt, i, arr) => {
+                                  const x = (i / Math.max(1, arr.length - 1)) * 116 + 2;
+                                  const clamped = Math.max(0, Math.min(1, pt.ndvi));
+                                  const y = 20 - clamped * 18;
+                                  return `${x.toFixed(1)},${y.toFixed(1)}`;
+                                })
+                                .join(" ")}
+                            />
+                          </svg>
+                          <span>
+                            6-mo NDVI ({modisNdvi.points.length} pts · peak {modisNdvi.peakNdvi?.toFixed(2)})
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1356,193 +1642,195 @@ export function FullFarmMap({
                             aria-hidden={!isExpanded}
                           >
                             <div className="drawer-collapse-inner">
-                            <div className="drawer-timeline-details">
-                              <div className="drawer-detail-tabs">
-                                <button
-                                  type="button"
-                                  className={detailTab === "proscons" ? "is-active" : ""}
-                                  onClick={() => setDetailTab("proscons")}
-                                >
-                                  Pros &amp; Cons
-                                </button>
-                                <button
-                                  type="button"
-                                  className={detailTab === "pests" ? "is-active" : ""}
-                                  onClick={() => setDetailTab("pests")}
-                                >
-                                  Pests &amp; Mitigations ({strategy.pestsAndDiseases.length})
-                                </button>
-                              </div>
-
-                              {detailTab === "proscons" ? (
-                                <div className="drawer-proscons-grid">
-                                  <div>
-                                    <strong className="pros-title">Pros</strong>
-                                    <ul>
-                                      {strategy.pros.map((item) => (
-                                        <li key={item}>{item}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                  <div>
-                                    <strong className="cons-title">Cons &amp; Trade-offs</strong>
-                                    <ul>
-                                      {strategy.cons.map((item) => (
-                                        <li key={item}>{item}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
+                              <div className="drawer-timeline-details">
+                                <div className="drawer-detail-tabs">
+                                  <button
+                                    type="button"
+                                    className={detailTab === "proscons" ? "is-active" : ""}
+                                    onClick={() => setDetailTab("proscons")}
+                                  >
+                                    Pros &amp; Cons
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={detailTab === "pests" ? "is-active" : ""}
+                                    onClick={() => setDetailTab("pests")}
+                                  >
+                                    Pests &amp; Mitigations ({strategy.pestsAndDiseases.length})
+                                  </button>
                                 </div>
-                              ) : (
-                                <div className="drawer-pests-list">
-                                  {strategy.pestsAndDiseases.map((pest) => (
-                                    <div key={pest.name} className="drawer-pest-item">
-                                      <div className="drawer-pest-head">
-                                        <strong>{pest.name}</strong>
-                                        <span
-                                          className={`risk-pill risk-${pest.riskLevel.toLowerCase()}`}
-                                        >
-                                          {pest.riskLevel} Risk
-                                        </span>
-                                      </div>
-                                      <small>
-                                        <b>Trigger:</b> {pest.riskWindow}
-                                      </small>
-                                      <small>
-                                        <b>Mitigation:</b> {pest.mitigation}
-                                      </small>
+
+                                {detailTab === "proscons" ? (
+                                  <div className="drawer-proscons-grid">
+                                    <div>
+                                      <strong className="pros-title">Pros</strong>
+                                      <ul>
+                                        {strategy.pros.map((item) => (
+                                          <li key={item}>{item}</li>
+                                        ))}
+                                      </ul>
                                     </div>
+                                    <div>
+                                      <strong className="cons-title">Cons &amp; Trade-offs</strong>
+                                      <ul>
+                                        {strategy.cons.map((item) => (
+                                          <li key={item}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="drawer-pests-list">
+                                    {strategy.pestsAndDiseases.map((pest) => (
+                                      <div key={pest.name} className="drawer-pest-item">
+                                        <div className="drawer-pest-head">
+                                          <strong>{pest.name}</strong>
+                                          <span
+                                            className={`risk-pill risk-${pest.riskLevel.toLowerCase()}`}
+                                          >
+                                            {pest.riskLevel} Risk
+                                          </span>
+                                        </div>
+                                        <small>
+                                          <b>Trigger:</b> {pest.riskWindow}
+                                        </small>
+                                        <small>
+                                          <b>Mitigation:</b> {pest.mitigation}
+                                        </small>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <div className="drawer-verification-tags">
+                                  {strategy.verificationTags.map((tag) => (
+                                    <span key={tag}>{tag}</span>
                                   ))}
                                 </div>
-                              )}
-
-                              <div className="drawer-verification-tags">
-                                {strategy.verificationTags.map((tag) => (
-                                  <span key={tag}>{tag}</span>
-                                ))}
                               </div>
-                            </div>
                             </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                    </>
+                  )}
                 </div>
               );
             })()
           ) : (
             <>
               <div className="full-map-profile-grid">
-            <div className="form-field full-span">
-              <Label htmlFor="map-farm-location">Municipality / city (automatic, editable)</Label>
-              <Input
-                id="map-farm-location"
-                value={farm.place}
-                onChange={(e) => onUpdateFarm("place", e.target.value)}
-              />
-              <small>Detected from your selected farm point when public records are available.</small>
-            </div>
+                <div className="form-field full-span">
+                  <Label htmlFor="map-farm-location">Municipality / city (automatic, editable)</Label>
+                  <Input
+                    id="map-farm-location"
+                    value={farm.place}
+                    onChange={(e) => onUpdateFarm("place", e.target.value)}
+                  />
+                  <small>Detected from your selected farm point when public records are available.</small>
+                </div>
 
-            <div className="form-field">
-              <Label htmlFor="map-area-ha">Farm area (ha)</Label>
-              <div className="input-unit-wrap">
-                <Input id="map-area-ha" readOnly value={farm.area} />
-                <span>ha</span>
+                <div className="form-field">
+                  <Label htmlFor="map-area-ha">Farm area (ha)</Label>
+                  <div className="input-unit-wrap">
+                    <Input id="map-area-ha" readOnly value={farm.area} />
+                    <span>ha</span>
+                  </div>
+                  <small>Calculated from drawn boundary.</small>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-plant-date">Planned next planting</Label>
+                  <Input
+                    id="map-plant-date"
+                    type="date"
+                    value={farm.planted}
+                    onChange={(e) => onUpdateFarm("planted", e.target.value)}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-current-crop">Current crop</Label>
+                  <select
+                    id="map-current-crop"
+                    className="form-select"
+                    value={farm.crop}
+                    onChange={(e) => onUpdateFarm("crop", e.target.value)}
+                  >
+                    {cropOptions.map((crop) => (
+                      <option key={crop}>{crop}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-previous-crop">Previous crop</Label>
+                  <select
+                    id="map-previous-crop"
+                    className="form-select"
+                    value={farm.previous}
+                    onChange={(e) => onUpdateFarm("previous", e.target.value)}
+                  >
+                    {previousCropOptions.map((crop) => (
+                      <option key={crop}>{crop}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-soil-type">Soil texture / type</Label>
+                  <Input
+                    id="map-soil-type"
+                    value={farm.soil}
+                    placeholder="Awaiting public estimate"
+                    onChange={(e) => onUpdateFarm("soil", e.target.value)}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-soil-ph">Soil pH (water)</Label>
+                  <Input
+                    id="map-soil-ph"
+                    type="number"
+                    min="0"
+                    max="14"
+                    step="0.1"
+                    placeholder="Unknown"
+                    value={farm.ph}
+                    onChange={(e) => onUpdateFarm("ph", e.target.value)}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-irrigation">Irrigation</Label>
+                  <select
+                    id="map-irrigation"
+                    className="form-select"
+                    value={farm.irrigation}
+                    onChange={(e) => onUpdateFarm("irrigation", e.target.value)}
+                  >
+                    {["Unknown", "Rain-fed", "Gravity-fed", "Pump-irrigated", "Drip irrigation", "Other"].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <Label htmlFor="map-drainage">Field drainage</Label>
+                  <select
+                    id="map-drainage"
+                    className="form-select"
+                    value={farm.drainage}
+                    onChange={(e) => onUpdateFarm("drainage", e.target.value)}
+                  >
+                    {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <small>Calculated from drawn boundary.</small>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-plant-date">Planned next planting</Label>
-              <Input
-                id="map-plant-date"
-                type="date"
-                value={farm.planted}
-                onChange={(e) => onUpdateFarm("planted", e.target.value)}
-              />
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-current-crop">Current crop</Label>
-              <select
-                id="map-current-crop"
-                className="form-select"
-                value={farm.crop}
-                onChange={(e) => onUpdateFarm("crop", e.target.value)}
-              >
-                {cropOptions.map((crop) => (
-                  <option key={crop}>{crop}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-previous-crop">Previous crop</Label>
-              <select
-                id="map-previous-crop"
-                className="form-select"
-                value={farm.previous}
-                onChange={(e) => onUpdateFarm("previous", e.target.value)}
-              >
-                {previousCropOptions.map((crop) => (
-                  <option key={crop}>{crop}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-soil-type">Soil texture / type</Label>
-              <Input
-                id="map-soil-type"
-                value={farm.soil}
-                placeholder="Awaiting public estimate"
-                onChange={(e) => onUpdateFarm("soil", e.target.value)}
-              />
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-soil-ph">Soil pH (water)</Label>
-              <Input
-                id="map-soil-ph"
-                type="number"
-                min="0"
-                max="14"
-                step="0.1"
-                placeholder="Unknown"
-                value={farm.ph}
-                onChange={(e) => onUpdateFarm("ph", e.target.value)}
-              />
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-irrigation">Irrigation</Label>
-              <select
-                id="map-irrigation"
-                className="form-select"
-                value={farm.irrigation}
-                onChange={(e) => onUpdateFarm("irrigation", e.target.value)}
-              >
-                {["Unknown", "Rain-fed", "Gravity-fed", "Pump-irrigated", "Drip irrigation", "Other"].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-field">
-              <Label htmlFor="map-drainage">Field drainage</Label>
-              <select
-                id="map-drainage"
-                className="form-select"
-                value={farm.drainage}
-                onChange={(e) => onUpdateFarm("drainage", e.target.value)}
-              >
-                {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </div>
-          </div>
 
               {(() => {
                 const climateSummary = historical ? summarizeWeather(historical.days) : null;
@@ -1718,30 +2006,177 @@ export function FullFarmMap({
         </Button>
       </div>
 
-      {/* NASA GIBS heatmap legend */}
-      {heatmap !== "none" && !drawing && (
-        <div className="full-map-heatmap-legend" role="status" aria-label="Active NASA heatmap legend">
-          <div className="full-map-heatmap-legend-head">
-            <strong>{HEATMAP_LAYERS[heatmap].label}</strong>
+      {/* Bottom-left map layer switcher & legend HUD */}
+      {!drawing && (
+        <div className="full-map-bottom-hud" aria-label="Map view controls">
+          <div className="full-map-legend-card" role="status" aria-live="polite">
+            <div className="full-map-legend-head">
+              <span
+                className={`full-map-legend-title ${
+                  heatmap === "soil_moisture"
+                    ? "is-smap"
+                    : heatmap === "ndvi"
+                      ? "is-ndvi"
+                      : heatmap === "lst"
+                        ? "is-lst"
+                        : "is-truecolor"
+                }`}
+              >
+                <span className="full-map-legend-dot" aria-hidden="true" />
+                {heatmap === "soil_moisture"
+                  ? "SOIL MOISTURE"
+                  : heatmap === "ndvi"
+                    ? "PLANT HEALTH"
+                    : heatmap === "lst"
+                      ? "GROUND HEAT"
+                      : "YOUR FARM FIELD"}
+              </span>
+              <span className="full-map-legend-source">
+                {heatmap === "soil_moisture"
+                  ? "NASA Soil Data"
+                  : heatmap === "ndvi"
+                    ? "NASA Greenness"
+                    : heatmap === "lst"
+                      ? "NASA Heat Map"
+                      : "Satellite View"}
+              </span>
+            </div>
+            <p className="full-map-legend-desc">
+              {heatmap === "soil_moisture"
+                ? `Soil moisture is ${moisture !== null ? `${moisture}%` : "loading"}. Shows how wet or dry the topsoil is.`
+                : heatmap === "ndvi"
+                  ? `Plant greenness is ${
+                      modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
+                        ? modisNdvi.latestNdvi.toFixed(2)
+                        : "loading"
+                    } for your ${farm.crop || "crop"}. Higher means greener plants.`
+                  : heatmap === "lst"
+                    ? `Ground temperature is ${
+                        surfaceTemp !== null ? `${surfaceTemp.toFixed(1)}°C` : "loading"
+                      }. Shows how warm the soil surface is.`
+                    : `Showing your farm boundary${
+                        farm.place && farm.place !== "Location not identified" ? ` in ${farm.place}` : ""
+                      }. Tap a button below to check soil moisture or plant health.`}
+            </p>
+            {heatmap !== "none" && (
+              <div className="full-map-legend-scale">
+                <div
+                  className="full-map-legend-bar"
+                  style={{
+                    background:
+                      heatmap === "ndvi"
+                        ? "linear-gradient(90deg, #ef4444, #facc15, #16a34a)"
+                        : heatmap === "soil_moisture"
+                          ? "linear-gradient(90deg, #fbbf24, #38bdf8, #1d4ed8)"
+                          : HEATMAP_LAYERS[heatmap].gradient,
+                  }}
+                />
+                <div className="full-map-legend-ticks">
+                  {heatmap === "ndvi" ? (
+                    <>
+                      <span>0.15 Bare Soil</span>
+                      <span>0.50 Growing</span>
+                      <span>0.85 Lush &amp; Green</span>
+                    </>
+                  ) : heatmap === "soil_moisture" ? (
+                    <>
+                      <span>10% Dry</span>
+                      <span>35% Just Right</span>
+                      <span>60% Very Wet</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Cool</span>
+                      <span>Warm</span>
+                      <span>Hot</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="full-map-layer-pills" role="group" aria-label="Map view mode">
             <button
               type="button"
-              aria-label="Turn off heatmap"
+              className={`full-map-layer-pill ${heatmap === "none" ? "is-active" : ""}`}
+              aria-pressed={heatmap === "none"}
               onClick={() => setHeatmap("none")}
             >
-              <X size={13} />
+              <Globe size={14} />
+              <span>Field View</span>
+            </button>
+            <button
+              type="button"
+              className={`full-map-layer-pill ${heatmap === "soil_moisture" ? "is-active" : ""}`}
+              aria-pressed={heatmap === "soil_moisture"}
+              onClick={() => setHeatmap("soil_moisture")}
+            >
+              <Droplets size={14} className="text-sky-600" />
+              <span>Soil Moisture</span>
+            </button>
+            <button
+              type="button"
+              className={`full-map-layer-pill ${heatmap === "ndvi" ? "is-active" : ""}`}
+              aria-pressed={heatmap === "ndvi"}
+              onClick={() => setHeatmap("ndvi")}
+            >
+              <Activity size={14} className="text-emerald-600" />
+              <span>Plant Health</span>
+            </button>
+            <button
+              type="button"
+              className={`full-map-layer-pill ${heatmap === "lst" ? "is-active" : ""}`}
+              aria-pressed={heatmap === "lst"}
+              onClick={() => setHeatmap("lst")}
+            >
+              <ThermometerSun size={14} className="text-amber-600" />
+              <span>Ground Heat</span>
             </button>
           </div>
-          <div
-            className="full-map-heatmap-bar"
-            style={{ background: HEATMAP_LAYERS[heatmap].gradient }}
-          />
-          <span>{HEATMAP_LAYERS[heatmap].scaleLabel}</span>
+        </div>
+      )}
+
+      {/* Centered Farm Lot Verification Loading / Restriction Modal */}
+      {ENABLE_FARM_LOT_VERIFICATION && (checkingLandUse || landUseBlockedMessage) && (
+        <div
+          className={`full-map-center-modal ${landUseBlockedMessage ? "is-error" : ""}`}
+          role={landUseBlockedMessage ? "alertdialog" : "status"}
+          aria-live="polite"
+        >
+          {checkingLandUse ? (
+            <>
+              <Loader2 size={26} className="animate-spin" />
+              <strong>Verifying farm lot…</strong>
+              <span>Checking NASA MODIS NDVI, soil profile, and terrain</span>
+            </>
+          ) : (
+            <>
+              <strong>Selected Area Is Invalid</strong>
+              <p>{landUseBlockedMessage}</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setLandUseBlockedMessage("");
+                  setDraft([]);
+                  setDrawing(false);
+                }}
+              >
+                Select Another Lot
+              </Button>
+            </>
+          )}
         </div>
       )}
 
       {/* Status / error toast */}
       {(drawing || error) && (
-        <div className="full-map-hud-bottom" role={error ? "alert" : "status"}>
+        <div
+          className={`full-map-hud-bottom ${error ? "is-error" : ""}`}
+          role={error ? "alert" : "status"}
+        >
           {error
             ? error
             : "Click corners on the satellite image to outline your field, then click Finish."}

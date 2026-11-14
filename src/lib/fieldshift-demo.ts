@@ -1157,3 +1157,134 @@ export function buildSoilAndAgronomyAdvisory(input: {
     climateTiming: { bestPlantingWindow, prominentPestClimate },
   };
 }
+
+export interface CropDetectionResult {
+  detectedCrop: string;
+  confidencePct: number;
+  detectionMethod: string;
+  latestNdvi: number | null;
+}
+
+export function detectPlantedCrop(input: {
+  elevationM: number | null;
+  moisturePct: number | null;
+  recent30dRainfallMm: number | null;
+  municipality?: string;
+  ndviPoints?: Array<{ date: string; ndvi: number }>;
+}): CropDetectionResult {
+  const elev = input.elevationM ?? 350;
+  const moisture = input.moisturePct ?? 45;
+  const rain = input.recent30dRainfallMm ?? 150;
+  const muni = (input.municipality ?? "").toLowerCase();
+  const points = input.ndviPoints ?? [];
+  const latestNdvi = points.length ? points[points.length - 1]!.ndvi : null;
+
+  if (points.length >= 4) {
+    const values = points.map((p) => p.ndvi);
+    const peak = Math.max(...values);
+    const min = Math.min(...values);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const activeSteps = values.filter((v) => v >= 0.55).length;
+    const range = peak - min;
+
+    if (elev >= 700) {
+      if (mean >= 0.58 && range < 0.2) {
+        return {
+          detectedCrop: "Banana",
+          confidencePct: 79,
+          detectionMethod: "MODIS 250m NDVI + Elevation",
+          latestNdvi,
+        };
+      }
+      return {
+        detectedCrop: "Sweet potato",
+        confidencePct: 76,
+        detectionMethod: "MODIS 250m NDVI + Elevation",
+        latestNdvi,
+      };
+    }
+
+    // Sustained high greenness across 6 months (Sugarcane)
+    if (mean >= 0.68 && activeSteps >= Math.ceil(values.length * 0.7) && range <= 0.25) {
+      return {
+        detectedCrop: "Sugarcane",
+        confidencePct: 86,
+        detectionMethod: "MODIS 250m NDVI + Elevation",
+        latestNdvi,
+      };
+    }
+
+    // Moderate, steady year-round curve (Pineapple, especially northern/central Bukidnon)
+    if (mean >= 0.5 && mean <= 0.69 && range <= 0.2) {
+      return {
+        detectedCrop:
+          muni.includes("manolo") || muni.includes("sumilao") || muni.includes("maramag")
+            ? "Pineapple"
+            : "Cassava",
+        confidencePct: 81,
+        detectionMethod: "MODIS 250m NDVI + Elevation",
+        latestNdvi,
+      };
+    }
+
+    // Low water/planting dip followed by steady green-up under high soil moisture (Rice)
+    if (min <= 0.35 && moisture >= 60 && elev <= 500) {
+      return {
+        detectedCrop: "Rice",
+        confidencePct: 83,
+        detectionMethod: "MODIS 250m NDVI + Elevation",
+        latestNdvi,
+      };
+    }
+
+    // Short greenness spike (Mungbean / cover legume)
+    if (activeSteps <= 2 && peak >= 0.5 && peak <= 0.72) {
+      return {
+        detectedCrop: "Mungbean",
+        confidencePct: 77,
+        detectionMethod: "MODIS 250m NDVI + Elevation",
+        latestNdvi,
+      };
+    }
+
+    // Distinct rapid green-up peak (Yellow corn)
+    return {
+      detectedCrop: "Yellow corn",
+      confidencePct: peak >= 0.68 ? 85 : 78,
+      detectionMethod: "MODIS 250m NDVI + Elevation",
+      latestNdvi,
+    };
+  }
+
+  // Instant fallback: Bukidnon elevation + climate priors
+  if (elev >= 700) {
+    return {
+      detectedCrop: "Sweet potato",
+      confidencePct: 68,
+      detectionMethod: "Bukidnon Elevation & Climate Priors",
+      latestNdvi,
+    };
+  }
+  if (moisture >= 68 && rain >= 180 && elev <= 450) {
+    return {
+      detectedCrop: "Rice",
+      confidencePct: 72,
+      detectionMethod: "Bukidnon Elevation & Climate Priors",
+      latestNdvi,
+    };
+  }
+  if (muni.includes("manolo") || muni.includes("sumilao")) {
+    return {
+      detectedCrop: "Pineapple",
+      confidencePct: 71,
+      detectionMethod: "Bukidnon Elevation & Climate Priors",
+      latestNdvi,
+    };
+  }
+  return {
+    detectedCrop: elev <= 450 ? "Yellow corn" : "Sugarcane",
+    confidencePct: 74,
+    detectionMethod: "Bukidnon Elevation & Climate Priors",
+    latestNdvi,
+  };
+}

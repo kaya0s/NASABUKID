@@ -271,8 +271,8 @@ function FieldShift() {
   const [farm, setFarm] = useState<Farm>(SEED_FARM);
   const [stored, setStored] = useState(false);
   const [location, setLocation] = useState<Coordinates>({
-    latitude: 8.3,
-    longitude: 125.0,
+    latitude: 7.9219625,
+    longitude: 125.0936406,
   });
   const [locationConfirmed, setLocationConfirmed] = useState(false);
   const [boundary, setBoundary] = useState<Coordinates[]>([]);

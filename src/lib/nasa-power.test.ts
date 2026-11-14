@@ -115,7 +115,7 @@ describe("NASA POWER historical observations", () => {
   });
 });
 
-import { monthlyWeather } from "./nasa-power";
+import { monthlyWeather, parseModisNdviSeries, toModisDate } from "./nasa-power";
 describe("Monthly chart aggregation", () => {
   it("sums complete months and preserves incomplete calendar coverage", () => {
     const january = Array.from({ length: 31 }, (_, index) => ({
@@ -128,6 +128,22 @@ describe("Monthly chart aggregation", () => {
     ).toEqual([
       { month: "2024-01", label: "Jan", rainfall: 62, temperature: 24, missingDays: 0 },
       { month: "2024-02", label: "Feb", rainfall: null, temperature: null, missingDays: 29 },
+    ]);
+  });
+
+  it("formats MODIS dates and parses scaled MOD13Q1 NDVI series", () => {
+    expect(toModisDate(new Date("2025-02-01T00:00:00Z"))).toBe("A2025032");
+    expect(
+      parseModisNdviSeries({
+        subset: [
+          { calendar_date: "2025-01-17", data: [-3000] },
+          { calendar_date: "2025-02-02", data: [7400] },
+          { calendar_date: "2025-01-01", data: [4200] },
+        ],
+      }),
+    ).toEqual([
+      { date: "2025-01-01", ndvi: 0.42 },
+      { date: "2025-02-02", ndvi: 0.74 },
     ]);
   });
 });
