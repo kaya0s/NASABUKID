@@ -307,6 +307,16 @@ function OverviewPage({
         onLocationFound={onLocationFound}
       />
 
+      {/* Quick Actions Row */}
+      <div className="agri-quick-actions">
+        <Button size="lg" className="agri-btn-primary" onClick={onPrevention}>
+          <Sprout size={18} /> Plan My Crops
+        </Button>
+        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
+          <MessageCircle size={18} /> Ask Advisor
+        </Button>
+      </div>
+
       {/* Modern Visual Cards with Images & Bookmarks */}
       <div className="agri-cards-scroller">
         <article
@@ -384,16 +394,6 @@ function OverviewPage({
             </div>
           </div>
         </article>
-      </div>
-
-      {/* Quick Actions Row */}
-      <div className="agri-quick-actions">
-        <Button size="lg" className="agri-btn-primary" onClick={onPrevention}>
-          <Sprout size={18} /> Plan My Crops
-        </Button>
-        <Button size="lg" className="agri-btn-secondary" variant="outline" onClick={onChat}>
-          <MessageCircle size={18} /> Ask Advisor
-        </Button>
       </div>
     </div>
   );
