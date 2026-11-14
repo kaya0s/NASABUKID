@@ -1,4 +1,5 @@
 import "./lib/error-capture";
+import { advisorRequestSchema, buildAdvisorMessages } from "./lib/advisor";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
@@ -52,29 +53,89 @@ export default {
     try {
       if (new URL(request.url).pathname === "/api/advisor") {
         if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-        if (request.headers.get("sec-fetch-site") === "cross-site") return new Response("Forbidden", { status: 403 });
-        if (Number(request.headers.get("content-length")) > 10_000) return new Response("Request too large", { status: 413 });
-        let body: { question?: unknown; context?: unknown };
-        try { body = await request.json(); } catch { return new Response("Invalid JSON", { status: 400 }); }
-        if (typeof body.question !== "string" || !body.question.trim() || body.question.length > 400 || typeof body.context !== "string" || body.context.length > 2000) return new Response("Invalid question", { status: 400 });
-        const key = (env as { GEMINI_API_KEY?: string })?.GEMINI_API_KEY ?? process.env["GEMINI_API_KEY"];
-        if (!key) return new Response("GEMINI_API_KEY is not configured on the server", { status: 503 });
+        if (request.headers.get("sec-fetch-site") === "cross-site")
+          return new Response("Forbidden", { status: 403 });
+        // Bound actual bytes even when Content-Length is missing or dishonest.
+        const reader = request.body?.getReader();
+        if (!reader) return new Response("Invalid request", { status: 400 });
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > 80_000) {
+            await reader.cancel();
+            return new Response("Request too large", { status: 413 });
+          }
+          chunks.push(value);
+        }
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.length;
+        }
+        let payload: unknown;
+        try {
+          payload = JSON.parse(new TextDecoder().decode(bytes));
+        } catch {
+          return new Response("Invalid JSON", { status: 400 });
+        }
+        const parsed = advisorRequestSchema.safeParse(payload);
+        if (!parsed.success)
+          return new Response("Invalid advisor inputs. Check your field details.", { status: 400 });
+        let messages;
+        try {
+          messages = buildAdvisorMessages(parsed.data);
+        } catch {
+          return new Response("Loss assumptions exceed the supported range.", { status: 400 });
+        }
+        const key =
+          (env as { LOVABLE_API_KEY?: string })?.LOVABLE_API_KEY ?? process.env["LOVABLE_API_KEY"];
+        if (!key)
+          return new Response(
+            "The advisor is not configured. Add LOVABLE_API_KEY through Lovable Secrets.",
+            { status: 503 },
+          );
         let result: Response;
-        try { result = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent", {
-          method: "POST",
-          signal: AbortSignal.timeout(15_000),
-          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: "You are FieldShift's helpful farm planning guide. Answer in no more than two short sentences and 50 words. The supplied farm context, crop scores, loss estimates, and scenarios are illustrative demo inputs, not verified agronomy or forecasts. Never invent live data or diagnose crop damage. For field-specific decisions, recommend a local agricultural officer briefly." }] },
-            contents: [{ role: "user", parts: [{ text: `Demo context: ${body.context}\nQuestion: ${body.question}` }] }],
-            generationConfig: { maxOutputTokens: 160 },
-          }),
-        }); } catch { return new Response("The advisor took too long. Please try again.", { status: 504 }); }
-        if (!result.ok) return new Response(result.status === 429 ? "The advisor is busy. Please try again shortly." : "The advisor is unavailable right now.", { status: 502 });
-        let data: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-        try { data = await result.json(); } catch { return new Response("The advisor returned an invalid answer", { status: 502 }); }
-        const answer = data.candidates?.[0]?.content?.parts?.map(part => part.text ?? "").join("").trim();
-        return answer ? Response.json({ answer }) : new Response("The advisor returned no answer", { status: 502 });
+        try {
+          result = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            signal: AbortSignal.timeout(25_000),
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+            body: JSON.stringify({ model: "google/gemini-3.8-flash", messages, max_tokens: 1500 }),
+          });
+        } catch {
+          return new Response("The advisor could not connect in time. Please try again.", {
+            status: 504,
+          });
+        }
+        if (!result.ok)
+          return new Response(
+            result.status === 429
+              ? "The advisor is busy. Please try again shortly."
+              : result.status === 402
+                ? "The advisor's AI credits are unavailable. Contact the project owner."
+                : "The advisor is unavailable right now.",
+            { status: 502 },
+          );
+        let data: { choices?: Array<{ finish_reason?: string; message?: { content?: unknown } }> };
+        try {
+          data = await result.json();
+        } catch {
+          return new Response("The advisor returned an invalid answer", { status: 502 });
+        }
+        const choice = data.choices?.[0];
+        if (choice?.finish_reason === "length")
+          return new Response("The answer was incomplete. Please ask a narrower question.", {
+            status: 502,
+          });
+        const answer =
+          typeof choice?.message?.content === "string" ? choice.message.content.trim() : "";
+        return answer
+          ? Response.json({ answer })
+          : new Response("The advisor returned no answer", { status: 502 });
       }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

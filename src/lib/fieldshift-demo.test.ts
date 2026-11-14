@@ -84,3 +84,36 @@ it("only suggests drainage from complete screening inputs and never rewards unkn
     rainfed.map((rotation) => rotation.scores.water),
   );
 });
+
+import { planningReviewFlags, evaluateYieldPilot } from "./fieldshift-demo";
+it("flags missing water and drainage evidence without inventing suitability", () => {
+  expect(
+    planningReviewFlags({
+      crop: "Corn",
+      previous: "",
+      ph: "",
+      drainage: "Poor",
+      irrigation: "Unknown",
+      planted: "",
+    }),
+  ).toHaveLength(5);
+});
+it("compares held-out predictions with a baseline and measures interval coverage", () => {
+  expect(
+    evaluateYieldPilot([
+      { predicted: 100, observed: 120, baseline: 90, lower: 110, upper: 130 },
+      { predicted: 120, observed: 100, baseline: 90, lower: 110, upper: 130 },
+    ]),
+  ).toEqual({
+    count: 2,
+    maeKgPerHa: 20,
+    baselineMaeKgPerHa: 20,
+    biasKgPerHa: 0,
+    intervalCount: 2,
+    intervalCoverage: 0.5,
+  });
+  expect(() => evaluateYieldPilot([])).toThrow();
+  expect(() =>
+    evaluateYieldPilot([{ predicted: 1, observed: 1, baseline: 1, lower: 2 }]),
+  ).toThrow();
+});

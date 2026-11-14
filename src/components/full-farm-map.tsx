@@ -41,7 +41,7 @@ async function searchLocations(
 
   // Match direct coordinates: e.g. "8.32629, 124.97766" or "8.32629 124.97766"
   const coordMatch = trimmed.match(/^([-+]?\d{1,2}(?:\.\d+)?)[,\s]+([-+]?\d{1,3}(?:\.\d+)?)$/);
-  if (coordMatch) {
+  if (coordMatch && coordMatch[1] && coordMatch[2]) {
     const lat = parseFloat(coordMatch[1]);
     const lon = parseFloat(coordMatch[2]);
     if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {

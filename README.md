@@ -11,8 +11,8 @@ A NASA Space Apps decision-support prototype for crop planning and recovery in B
 - Daily rainfall chart, accessible observation table, CSV download, exact source URL, retrieval timestamp, and missing-data reporting. Missing observations never become zero rainfall.
 - In-memory historical request caching for 24 hours through React Query. Requests time out after 45 seconds; failed requests show an error without substituting sample data.
 - Three illustrative crop sequences. Demo scores respond to reported pH, drainage, and irrigation. A complete historical calendar year can optionally supply planting-month rainfall to the demo water rating. Changing location or scenario clears the applied historical context.
-- Recovery weather lookup around the entered event date, editable expected yield and price, and gross revenue-at-risk calculation. Recovery planting date and drainage update the shared farm profile and planner.
-- Photo preview and preset advisor responses remain clearly labeled demonstrations.
+- Recovery weather lookup around the entered event date, editable expected yield and price, and gross revenue-at-risk calculation. Planned next planting and drainage update the planner; the damaged crop’s actual planting date is separate.
+- Photos remain browser-only previews. The advisor receives bounded conversation history, structured event details, explicit uncertainty, and server-calculated loss through Lovable’s AI gateway.
 
 ## Scientific limits
 
@@ -20,7 +20,7 @@ Scoring, scenario curves, thresholds, and adjustments remain pure typed demo log
 
 NASA POWER is regional gridded data (meteorological resolution approximately 0.5° × 0.625°), not an exact farm measurement. Historical weather does not establish the cause of crop injury or prove flooding. Financial estimates are gross revenue at risk using entered assumptions, excluding costs and insurance.
 
-NOAA ENSO ingestion, verified local crop rules, calendar-aware rotation constraints, validated loss ranges, and a Python agronomy backend are not implemented. The Field Advisor uses Gemini to explain demo inputs; it does not analyze photos or provide verified agricultural advice.
+NOAA ENSO ingestion, verified local crop rules, calendar-aware rotation constraints, validated loss ranges, and a Python agronomy backend are not implemented. The Field Advisor uses Gemini through Lovable’s gateway to explain demo inputs; it does not analyze photos or provide verified agricultural advice.
 
 ## Run locally
 
@@ -29,7 +29,7 @@ npm install
 npm run dev
 ```
 
-Set `GEMINI_API_KEY` in the Git-ignored `.env` file before using the Field Advisor locally. The server reads it at startup; restart `npm run dev` after changing it. A local Cloudflare Worker preview reads `.output/server/.dev.vars`; link that ignored file to `../../.env` when using Wrangler.
+Enable AI in Lovable and provision its managed `LOVABLE_API_KEY` for the server runtime before using the Field Advisor. Never put credentials in browser code or Git. The server reads it at startup; restart `npm run dev` after changing it. A local Cloudflare Worker preview reads `.output/server/.dev.vars`; link that ignored file to `../../.env` when using Wrangler.
 
 ```sh
 npm test
@@ -64,3 +64,5 @@ The app footer has a collapsed “Sources & APIs used” control. Farm context h
 Each option includes a short research rationale and expandable findings/references. The curated reference summaries in `src/lib/crop-research.ts` distinguish FAO technical guidance, a Philippine corn–mungbean field experiment (Gatan & Gatan, 2019), a different cereal–mungbean management study (Dinesh et al., 2024), and controlled sweetpotato waterlogging experiments (Yang et al., 2025). Reference water needs retain their seasonal units; trial yields retain their cultivar, location, treatment and comparator context, including nonsignificant results. Experimental yield losses are not inserted into this farm's loss calculator.
 
 None of these references validates the full three-crop sequences for Bukidnon or calibrates the demo weights/ratings. The display explicitly says the ordering remains a demo comparison. Sweetpotato cards flag the need for drainage verification when reported drainage is not Good. This is evidence for discussing candidate crops and management, not proof of the best rotation or a new agronomic scoring model.
+
+Implementation details: [Changes](docs/CHANGES.md), [Methodology](docs/METHODOLOGY.md), [Evaluation protocol](docs/EVALUATION.md).

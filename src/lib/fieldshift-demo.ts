@@ -222,3 +222,72 @@ export function suggestDrainage(
     reason: "No clear texture/terrain signal. Use field observations to choose drainage.",
   };
 }
+
+// Screening flags are demo review gates, not validated crop exclusions.
+export function planningReviewFlags(farm: {
+  crop: string;
+  previous: string;
+  ph: string;
+  drainage: string;
+  irrigation: string;
+  planted: string;
+}) {
+  const flags: string[] = [];
+  if (!farm.crop.trim() || !farm.previous.trim())
+    flags.push("Confirm current crop and crop history before comparing sequences.");
+  if (!farm.ph.trim() || !Number.isFinite(Number(farm.ph)))
+    flags.push("Soil pH is unknown; obtain a local measurement.");
+  if (farm.drainage === "Unknown" || farm.drainage === "Poor")
+    flags.push(
+      "Drainage needs field assessment before selecting a next crop, especially sweetpotato.",
+    );
+  if (farm.irrigation === "Unknown")
+    flags.push("Water availability is unknown; irrigation cannot be assumed.");
+  if (!farm.planted) flags.push("Enter a planned next planting date to assess the crop calendar.");
+  return flags;
+}
+
+// Offline pilot metrics only; observed outcomes must be independently collected.
+export function evaluateYieldPilot(
+  rows: Array<{
+    predicted: number;
+    observed: number;
+    baseline: number;
+    lower?: number;
+    upper?: number;
+  }>,
+) {
+  if (!rows.length) throw new Error("At least one held-out outcome is required.");
+  for (const row of rows) {
+    if (
+      ![row.predicted, row.observed, row.baseline].every(
+        (value) => Number.isFinite(value) && value >= 0,
+      )
+    )
+      throw new Error("Yields must be finite, nonnegative kg/ha.");
+    if (
+      (row.lower === undefined) !== (row.upper === undefined) ||
+      (row.lower !== undefined &&
+        row.upper !== undefined &&
+        (!Number.isFinite(row.lower) ||
+          !Number.isFinite(row.upper) ||
+          row.lower < 0 ||
+          row.lower > row.upper))
+    )
+      throw new Error("Supply a valid interval or neither bound.");
+  }
+  const intervals = rows.filter((row) => row.lower !== undefined && row.upper !== undefined);
+  return {
+    count: rows.length,
+    maeKgPerHa:
+      rows.reduce((sum, row) => sum + Math.abs(row.predicted - row.observed), 0) / rows.length,
+    baselineMaeKgPerHa:
+      rows.reduce((sum, row) => sum + Math.abs(row.baseline - row.observed), 0) / rows.length,
+    biasKgPerHa: rows.reduce((sum, row) => sum + row.predicted - row.observed, 0) / rows.length,
+    intervalCount: intervals.length,
+    intervalCoverage: intervals.length
+      ? intervals.filter((row) => row.observed >= row.lower! && row.observed <= row.upper!).length /
+        intervals.length
+      : null,
+  };
+}
