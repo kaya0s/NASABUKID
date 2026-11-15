@@ -56,6 +56,10 @@ import {
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import floodCorn from "@/assets/sample-flooded-corn.jpg";
 import heroFarmland from "@/assets/hero-farmland.jpg";
+import landingHighlandFields from "@/assets/landing-highland-fields.jpg";
+import landingTerracedHills from "@/assets/landing-terraced-hills.jpg";
+import landingCornSky from "@/assets/landing-corn-sky.jpg";
+import landingCarabaoPlow from "@/assets/landing-carabao-plow.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -924,13 +928,49 @@ function FieldShift() {
   );
 }
 
+const LANDING_BACKDROPS = [
+  { src: landingHighlandFields, alt: "Highland farmland beneath mountain clouds" },
+  { src: landingTerracedHills, alt: "Green terraced agricultural hills" },
+  { src: landingCornSky, alt: "Cornfield tassels under bright blue sky" },
+  { src: landingCarabaoPlow, alt: "Farmer plowing soil with a carabao" },
+] as const;
+
 function LandingPage({
   onSelectMode,
 }: {
   onSelectMode: (mode: "rotation" | "recovery") => void;
 }) {
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % LANDING_BACKDROPS.length);
+    }, 6500);
+    return () => window.clearInterval(timer);
+  }, []);
+
   return (
     <div className="landing-root">
+      <div className="landing-backdrop-stage" aria-hidden="true">
+        {LANDING_BACKDROPS.map((slide, index) => (
+          <img
+            key={slide.src}
+            src={slide.src}
+            alt=""
+            loading={index === 0 ? "eager" : "lazy"}
+            decoding="async"
+            className={`landing-backdrop-slide ${index === activeSlide ? "is-active" : ""}`}
+          />
+        ))}
+        <div className="landing-cloud-veil" />
+        <div className="landing-backdrop-scrim" />
+      </div>
       <div className="landing-ambient-glow" aria-hidden="true" />
       <div className="landing-ambient-grid" aria-hidden="true" />
 
