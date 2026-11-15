@@ -9,6 +9,8 @@ export type MapInstance = {
   setView: (point: [number, number], zoom?: number, options?: object) => MapInstance;
   flyTo?: (point: [number, number], zoom?: number, options?: object) => MapInstance;
   on: (event: string, callback: (event: { latlng: { lat: number; lng: number } }) => void) => void;
+  off?: (event: string, callback: () => void) => void;
+  latLngToContainerPoint?: (point: [number, number] | LatLng) => { x: number; y: number };
   remove: () => void;
   removeLayer: (layer: unknown) => void;
   fitBounds: (points: [number, number][], options: object) => void;
@@ -26,7 +28,15 @@ export type MarkerInstance = {
   setLatLng: (point: [number, number] | LatLng) => MarkerInstance;
   on?: (event: string, callback: (event: { latlng: LatLng }) => void) => MarkerInstance;
   getLatLng?: () => LatLng;
+  setIcon?: (icon: unknown) => MarkerInstance;
   bindTooltip?: (content: string, options?: object) => MarkerInstance;
+  remove?: () => void;
+};
+export type PolygonInstance = {
+  setLatLngs: (points: [number, number][]) => void;
+  setStyle?: (options: object) => void;
+  on?: (event: string, callback: () => void) => PolygonInstance;
+  remove?: () => void;
 };
 export type CircleInstance = {
   addTo: (map: MapInstance) => CircleInstance;
@@ -42,10 +52,7 @@ export type Leaflet = {
     points: [number, number][],
     options: object,
   ) => {
-    addTo: (map: MapInstance) => {
-      setLatLngs: (points: [number, number][]) => void;
-      setStyle?: (options: object) => void;
-    };
+    addTo: (map: MapInstance) => PolygonInstance;
   };
   marker?: (point: [number, number] | LatLng, options?: object) => MarkerInstance;
   circleMarker?: (point: [number, number] | LatLng, options?: object) => MarkerInstance;

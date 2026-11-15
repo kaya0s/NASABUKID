@@ -81,6 +81,9 @@ it("shows a suggestion plus alternatives, passes the same result, and clears it 
   expect(screen.getByText("NEXT CROP TO CONSIDER").closest(".next-crop-results")).toHaveFocus();
   expect(screen.queryByRole("button", { name: "Suggest my next crop" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Current crop")).not.toBeInTheDocument();
+  expect(screen.getByTestId("next-crop-history-ref").textContent).toContain("Current crop");
+  expect(screen.getByTestId("next-crop-history-ref").textContent).toContain("Previous crop");
+  expect(screen.getByTestId("next-crop-history-ref").textContent).toContain("Corn");
   expect(screen.queryByText("Soil pH: 6")).not.toBeInTheDocument();
   expect(screen.getAllByText("ALTERNATIVE")).toHaveLength(2);
   expect(screen.queryByText(/\/ 100/)).not.toBeInTheDocument();

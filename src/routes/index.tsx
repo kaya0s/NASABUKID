@@ -5,6 +5,31 @@ import { ROTATION_RESEARCH } from "@/lib/crop-research";
 import { ApiSources } from "@/components/api-sources";
 import { FarmPublicData, type ContextFields } from "@/components/farm-public-data";
 import { measureFarmBoundary } from "@/lib/farm-boundary";
+import {
+  computeSafeLossPhp,
+  createEmptyLotsCache,
+  defaultLotName,
+  generateLotId,
+  loadFarmLotsCache,
+  removeFarmLot,
+  renameFarmLot,
+  saveFarmLotsCache,
+  selectFarmLot,
+  upsertFarmLot,
+  type CachedFarmLot,
+  type FarmLotsCacheState,
+} from "@/lib/farm-lots-cache";
+import {
+  LanguageTogglePill,
+  LocaleProvider,
+  translateCropName,
+  translateFieldOption,
+  translateHazardName,
+  translateHazardObservation,
+  translateRecoverySteps,
+  useAppLocale,
+  type AppLocale,
+} from "@/lib/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -232,6 +257,10 @@ function useIsMobile() {
 
 function FieldShift() {
   const isMobile = useIsMobile();
+  const [lotsCache, setLotsCache] = useState<FarmLotsCacheState>(createEmptyLotsCache);
+  const [activeLotId, setActiveLotId] = useState<string>(() => generateLotId());
+  const [activeLotName, setActiveLotName] = useState<string>("Lot 1");
+  const [plannedDate, setPlannedDate] = useState<string>("");
   const [plannerResult, setPlannerResult] = useState<PlannerResult | null>(null);
   const [advisorWorkflow, setAdvisorWorkflow] = useState<"recovery" | "prevention">("prevention");
   const [mapAdvisoryMode, setMapAdvisoryMode] = useState<"rotation" | "recovery">("rotation");
@@ -272,6 +301,8 @@ function FieldShift() {
     sample: true,
   });
   const [advisorLanguage, setAdvisorLanguage] = useState<AdvisorLanguage>("auto");
+  const [appLocale, setAppLocale] = useState<AppLocale>("en");
+  const [enteredFromLanding, setEnteredFromLanding] = useState(false);
   const [advisorOpen, setAdvisorOpen] = useState(false);
   const explainedPlanKey = useRef<string | null>(null);
   const [chatInput, setChatInput] = useState("");
@@ -280,8 +311,49 @@ function FieldShift() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
 
+  function applyCachedLotToWorkspace(lot: CachedFarmLot) {
+    setActiveLotId(lot.id);
+    setActiveLotName(lot.name);
+    setFarm(lot.farm);
+    setLocation(lot.location);
+    setLocationConfirmed(lot.locationConfirmed);
+    setBoundary(lot.boundary);
+    setTerrain(lot.terrain);
+    setPlannedDate(lot.cropRotation.plannedDate);
+    setPlannerResult(lot.cropRotation.plannerResult);
+    setHazard(lot.disasterRecovery.hazard);
+    setDamageDate(lot.disasterRecovery.damageDate);
+    setAffected(lot.disasterRecovery.affected);
+    setYieldLoss(lot.disasterRecovery.yieldLoss);
+    setPrice(lot.disasterRecovery.price);
+    setExpectedYield(lot.disasterRecovery.expectedYield);
+    setAssumptionsEdited(lot.disasterRecovery.assumptionsEdited);
+    setActualPlantingDate(lot.disasterRecovery.actualPlantingDate);
+    setGrowthStage(lot.disasterRecovery.growthStage);
+    setDurationHours(lot.disasterRecovery.durationHours);
+    setObservations(lot.disasterRecovery.observations);
+    setHistorical(null);
+    setEventWeather(null);
+  }
+
   useEffect(() => {
     try {
+      const savedLocale = window.localStorage.getItem("nasabukid-locale");
+      if (savedLocale === "en" || savedLocale === "ceb") {
+        setAppLocale(savedLocale);
+        setAdvisorLanguage(savedLocale === "ceb" ? "bisaya" : "auto");
+      }
+
+      const savedLots = loadFarmLotsCache();
+      if (savedLots.lots.length > 0) {
+        setLotsCache(savedLots);
+        const current =
+          savedLots.lots.find((l) => l.id === savedLots.activeLotId) ?? savedLots.lots[0]!;
+        applyCachedLotToWorkspace(current);
+        setStored(true);
+        return;
+      }
+
       const saved = window.localStorage.getItem("fieldshift-demo-farm");
       if (saved) {
         const parsed: unknown = JSON.parse(saved);
@@ -303,7 +375,7 @@ function FieldShift() {
       const savedBoundary = window.localStorage.getItem("fieldshift-boundary");
       if (savedBoundary) {
         const points: unknown = JSON.parse(savedBoundary);
-        if (Array.isArray(points) && points.length) {
+        if (Array.isArray(points) && points.length >= 3) {
           const measured = measureFarmBoundary(points);
           setBoundary(measured.points);
           setLocationConfirmed(true);
@@ -327,12 +399,157 @@ function FieldShift() {
       window.localStorage.setItem("fieldshift-location", JSON.stringify(location));
       window.localStorage.setItem("fieldshift-boundary", JSON.stringify(boundary));
       window.localStorage.setItem("fieldshift-location-confirmed", String(locationConfirmed));
+      window.localStorage.setItem("nasabukid-locale", appLocale);
     } catch {
       /* Continue without persistence when browser storage is unavailable. */
     }
-  }, [farm, location, boundary, locationConfirmed, stored]);
+  }, [farm, location, boundary, locationConfirmed, appLocale, stored]);
+
+  useEffect(() => {
+    if (!stored) return;
+    if (boundary.length < 3) return;
+    const now = new Date().toISOString();
+    const estimatedLossPhp = computeSafeLossPhp({
+      area: farm.area,
+      affected,
+      expectedYield,
+      yieldLoss,
+      price,
+    });
+    setLotsCache((prev) => {
+      const existing = prev.lots.find((l) => l.id === activeLotId);
+      const lotIndex = prev.lots.findIndex((l) => l.id === activeLotId);
+      const resolvedFallback = defaultLotName(
+        lotIndex >= 0 ? lotIndex + 1 : prev.lots.length + 1,
+      );
+      const candidate: CachedFarmLot = {
+        id: activeLotId,
+        name: activeLotName.trim() ? activeLotName : existing?.name ?? resolvedFallback,
+        location,
+        locationConfirmed,
+        boundary,
+        terrain,
+        farm,
+        cropRotation: {
+          plannedDate: plannedDate || farm.planted,
+          plannerResult,
+        },
+        disasterRecovery: {
+          hazard,
+          damageDate,
+          affected,
+          yieldLoss,
+          price,
+          expectedYield,
+          assumptionsEdited,
+          actualPlantingDate,
+          growthStage,
+          durationHours,
+          observations,
+          estimatedLossPhp,
+        },
+        floodRiskCheckedAt: existing?.floodRiskCheckedAt ?? null,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      const next = upsertFarmLot(prev, candidate);
+      saveFarmLotsCache(next);
+      return next;
+    });
+  }, [
+    stored,
+    activeLotId,
+    activeLotName,
+    farm,
+    location,
+    locationConfirmed,
+    boundary,
+    terrain,
+    plannedDate,
+    plannerResult,
+    hazard,
+    damageDate,
+    affected,
+    yieldLoss,
+    price,
+    expectedYield,
+    assumptionsEdited,
+    actualPlantingDate,
+    growthStage,
+    durationHours,
+    observations,
+  ]);
+
+  function handleSelectSavedLot(lotId: string) {
+    const target = lotsCache.lots.find((l) => l.id === lotId);
+    if (!target) return;
+    const next = selectFarmLot(lotsCache, lotId);
+    setLotsCache(next);
+    saveFarmLotsCache(next);
+    applyCachedLotToWorkspace(target);
+  }
+
+  function handleStartNewLot() {
+    const nextId = generateLotId();
+    const nextName = defaultLotName(lotsCache.lots.length + 1);
+    setActiveLotId(nextId);
+    setActiveLotName(nextName);
+    setBoundary([]);
+    setTerrain(null);
+    setPlannerResult(null);
+    setPlannedDate("");
+    setHistorical(null);
+    setEventWeather(null);
+    setLocationConfirmed(false);
+    setFarm((current) => ({
+      ...SEED_FARM,
+      crop: current.crop,
+      previous: current.previous,
+    }));
+  }
+
+  function handleRenameSavedLot(lotId: string, nextName: string) {
+    if (lotId === activeLotId) {
+      setActiveLotName(nextName);
+    }
+    setLotsCache((prev) => {
+      const next = renameFarmLot(prev, lotId, nextName);
+      saveFarmLotsCache(next);
+      return next;
+    });
+  }
+
+  function handleDeleteSavedLot(lotId: string) {
+    const next = removeFarmLot(lotsCache, lotId);
+    setLotsCache(next);
+    saveFarmLotsCache(next);
+    if (lotId === activeLotId) {
+      const nextActive = next.lots.find((l) => l.id === next.activeLotId) ?? next.lots[0];
+      if (nextActive) {
+        applyCachedLotToWorkspace(nextActive);
+      } else {
+        setActiveLotId(generateLotId());
+        setActiveLotName("Lot 1");
+        setBoundary([]);
+        setTerrain(null);
+        setPlannerResult(null);
+        setPlannedDate("");
+        setHistorical(null);
+        setEventWeather(null);
+        setLocationConfirmed(false);
+        setFarm(SEED_FARM);
+      }
+    }
+  }
 
   function updateLocation(next: Coordinates) {
+    if (lotsCache.lots.some((l) => l.id === activeLotId)) {
+      setActiveLotId(generateLotId());
+      setActiveLotName(defaultLotName(lotsCache.lots.length + 1));
+      setTerrain(null);
+      setPlannedDate("");
+      setPlannerResult(null);
+    }
     setLocation(next);
     setBoundary([]);
     setHistorical(null);
@@ -419,13 +636,16 @@ function FieldShift() {
   }
 
   useEffect(() => {
-    if (page !== "fullmap" || !locationConfirmed) return;
+    if (page !== "fullmap" || !locationConfirmed || boundary.length < 3) {
+      setClimateLoading(false);
+      return undefined;
+    }
     if (
       historical &&
-      Math.abs(historical.latitude - location.latitude) < 0.001 &&
-      Math.abs(historical.longitude - location.longitude) < 0.001
+      Math.abs(historical.latitude - location.latitude) < 0.0001 &&
+      Math.abs(historical.longitude - location.longitude) < 0.0001
     ) {
-      return;
+      return undefined;
     }
     const controller = new AbortController();
     setClimateLoading(true);
@@ -442,7 +662,7 @@ function FieldShift() {
         }
       });
     return () => controller.abort();
-  }, [page, locationConfirmed, location.latitude, location.longitude]);
+  }, [page, locationConfirmed, boundary.length, location.latitude, location.longitude]);
 
   function updateFarm(key: keyof Farm, value: string) {
     setProfileEdited(true);
@@ -567,6 +787,24 @@ function FieldShift() {
     setAdvisorLanguage(language);
     if (language === "bisaya" && !chatBusy && chatMessages.some((message) => message.role === "assistant" && !message.error)) {
       void sendQuestion("Ipasabot pag-usab sa Bisaya (Cebuano) ang imong katapusang tubag. Mubo ug yano lang.", advisorWorkflow, language);
+    }
+  }
+
+  function changeAppLocale(next: AppLocale) {
+    setAppLocale(next);
+    const nextAdvisorLang: AdvisorLanguage = next === "ceb" ? "bisaya" : "auto";
+    setAdvisorLanguage(nextAdvisorLang);
+    if (
+      advisorOpen &&
+      nextAdvisorLang === "bisaya" &&
+      !chatBusy &&
+      chatMessages.some((message) => message.role === "assistant" && !message.error)
+    ) {
+      void sendQuestion(
+        "Ipasabot pag-usab sa Bisaya (Cebuano) ang imong katapusang tubag. Mubo ug yano lang.",
+        advisorWorkflow,
+        nextAdvisorLang,
+      );
     }
   }
 
@@ -706,238 +944,261 @@ function FieldShift() {
     />
   );
 
+  const advisorContext =
+    appLocale === "ceb"
+      ? advisorWorkflow === "recovery"
+        ? `${translateCropName(farm.crop, "ceb")} · ${translateHazardName(hazard, "ceb")} · ${lossLabel} banabana nga kita nga nameligro`
+        : currentPlannerResult?.suggestions[0]
+          ? `${translateCropName(currentPlannerResult.suggestions[0].crop, "ceb")} · Giplano nga pagtanom ${currentPlannerResult.planted}`
+          : "Imong kasamtangang uma · Wala pay napili nga sunod nga tanom"
+      : advisorWorkflow === "recovery"
+        ? `${farm.crop} · ${hazard} · ${lossLabel} estimated revenue at risk`
+        : currentPlannerResult?.suggestions[0]
+          ? `${currentPlannerResult.suggestions[0].crop} · Planned planting ${currentPlannerResult.planted}`
+          : "Your current field · No next-crop suggestion applied yet";
+
   const advisorContent = (
-<AdvisorChat
-        open={advisorOpen}
-        onOpenChange={setAdvisorOpen}
-        messages={chatMessages}
-        busy={chatBusy}
-        input={chatInput}
-        onInputChange={setChatInput}
-        onSend={sendQuestion}
-        language={advisorLanguage}
-        onLanguageChange={changeAdvisorLanguage}
-        workflow={advisorWorkflow}
-        context={advisorWorkflow === "recovery"
-          ? `${farm.crop} · ${hazard} · ${lossLabel} estimated revenue at risk`
-          : currentPlannerResult?.suggestions[0]
-            ? `${currentPlannerResult.suggestions[0].crop} · Planned planting ${currentPlannerResult.planted}`
-            : "Your current field · No next-crop suggestion applied yet"}
-      />
+    <AdvisorChat
+      open={advisorOpen}
+      onOpenChange={setAdvisorOpen}
+      messages={chatMessages}
+      busy={chatBusy}
+      input={chatInput}
+      onInputChange={setChatInput}
+      onSend={sendQuestion}
+      language={advisorLanguage}
+      onLanguageChange={changeAdvisorLanguage}
+      workflow={advisorWorkflow}
+      context={advisorContext}
+    />
   );
 
-  if (page === "landing") {
-    return (
-      <LandingPage
-        onSelectMode={(mode) => {
-          setMapAdvisoryMode(mode);
-          setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
-          if (mode === "recovery") setRecoveryCardStep(1);
-          goTo("fullmap");
-        }}
-      />
-    );
-  }
-
   return (
-    <div className="app-shell app-shell-no-sidebar">
-      <main className="main-area">
-        {page === "fullmap" ? (
-          <FullFarmMap
-            location={location}
-            boundary={boundary}
-            onBoundary={updateBoundary}
-            onChange={updateLocation}
-            areaLabel={farm.area}
-            farm={farm}
-            onUpdateFarm={updateFarm}
-            locationConfirmed={locationConfirmed}
-            onPlannerResult={setPlannerResult}
-            advisorOpen={advisorOpen}
-            advisorContent={advisorContent}
-            onAskAdvisor={askAboutResult}
-            onBrandClick={() => goTo("landing")}
-            advisoryMode={mapAdvisoryMode}
-            onAdvisoryModeChange={(mode) => {
-              setMapAdvisoryMode(mode);
-              setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
-            }}
-            hazard={hazard}
-            onHazardChange={changeHazard}
-            affected={affected}
-            onAffectedChange={(value) => {
-              setAssumptionsEdited(true);
-              setAffected(value);
-            }}
-            yieldLoss={yieldLoss}
-            onYieldLossChange={(value) => {
-              setAssumptionsEdited(true);
-              setYieldLoss(value);
-            }}
-            price={price}
-            onPriceChange={(value) => {
-              setAssumptionsEdited(true);
-              setPrice(value);
-            }}
-            expectedYield={expectedYield}
-            onExpectedYieldChange={(value) => {
-              setAssumptionsEdited(true);
-              setExpectedYield(value);
-            }}
-            damageDate={damageDate}
-            onDamageDateChange={(value) => {
-              setDamageDate(value);
-              setEventWeather(null);
-            }}
-            legacyRecoveryContent={recoveryContent}
-            cardRecoveryContent={cardRecoveryContent}
-            onOpenRecovery={() => setRecoveryCardStep(1)}
-            historical={historical}
-            climateLoading={climateLoading}
-            terrain={terrain}
-            cropOptions={CROP_OPTIONS}
-            previousCropOptions={PREVIOUS_CROP_OPTIONS}
-          />
-        ) : (
-          <div className="page-wrap">
-            <div className="glass-brand-row">
-              <button
-                type="button"
-                className="glass-brand-pill"
-                onClick={() => goTo(page === "overview" ? "landing" : "overview")}
-                title={page === "overview" ? "Return to Landing Page" : "Return to Overview"}
-              >
-                <span className="glass-brand-mark">
-                  <Sprout size={18} strokeWidth={2} />
-                </span>
-                <span className="brand-name">
-                  <span className="brand-nasa">NASA</span>
-                  <span className="brand-bukid">BUKID</span>
-                </span>
-              </button>
-            </div>
-            {page !== "overview" && (
-              <div className="page-intro">
-                <div>
-                  <span className="eyebrow">
-                    <MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}
-                  </span>
-                  <h1>{pageTitle[page]}</h1>
-                  <p className="intro-copy">
-                    {page === "farm"
-                      ? "Set your location, boundary, and field details for customized recommendations."
-                      : page === "prevention"
-                        ? "Compare climate-ready crop rotation plans for your field."
-                        : page === "recovery"
-                          ? "Estimate potential crop loss and planning next steps."
-                          : page === "evidence"
-                            ? "Methodology and data sources behind rotation scores."
-                            : ""}
-                  </p>
-                </div>
-                <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}>
-                  <ArrowLeft size={16} /> Overview
-                </Button>
-              </div>
-            )}
-
-            {page === "overview" && (
-              <OverviewPage
-                farm={farm}
-                boundary={boundary}
-                location={location}
-                scenario={scenario}
-                rotationName={plannerResult?.inputKey === nextCropInputKey(location, farm, terrain) ? plannerResult.result.suggestions[0]?.crop ?? "No crop cleared screening" : "Plan your next crop"}
-                hazard={hazard}
-                onLocationFound={(coords) => {
-                  updateLocation(coords);
-                }}
-                onPlan={() => goTo("farm")}
-                onFullMap={() => goTo("fullmap")}
-                onRecover={() => goTo("recovery")}
-                onPrevention={() => goTo("prevention")}
-                onChat={() => setAdvisorOpen(true)}
-              />
-            )}
-            {page === "farm" && (
-              <FarmPage
-                farm={farm}
+    <LocaleProvider locale={appLocale} onLocaleChange={changeAppLocale}>
+      {page === "landing" ? (
+        <LandingPage
+          onSelectMode={(mode) => {
+            setMapAdvisoryMode(mode);
+            setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
+            if (mode === "recovery") setRecoveryCardStep(1);
+            setEnteredFromLanding(true);
+            goTo("fullmap");
+          }}
+        />
+      ) : (
+        <div className="app-shell app-shell-no-sidebar">
+          <main className="main-area">
+            {page === "fullmap" ? (
+              <FullFarmMap
                 location={location}
                 boundary={boundary}
                 onBoundary={updateBoundary}
-                onLocation={updateLocation}
-                onUpdate={updateFarm}
-                onContinue={() => goTo("prevention")}
+                onChange={updateLocation}
+                areaLabel={farm.area}
+                farm={farm}
+                onUpdateFarm={updateFarm}
+                locationConfirmed={locationConfirmed && boundary.length >= 3}
+                onPlannerResult={setPlannerResult}
+                advisorOpen={advisorOpen}
+                advisorContent={advisorContent}
+                onAskAdvisor={askAboutResult}
+                onBrandClick={() => {
+                  setEnteredFromLanding(false);
+                  goTo("landing");
+                }}
+                autoLocateOnEnter={enteredFromLanding}
+                advisoryMode={mapAdvisoryMode}
+                onAdvisoryModeChange={(mode) => {
+                  setMapAdvisoryMode(mode);
+                  setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
+                }}
+                hazard={hazard}
+                onHazardChange={changeHazard}
+                affected={affected}
+                onAffectedChange={(value) => {
+                  setAssumptionsEdited(true);
+                  setAffected(value);
+                }}
+                yieldLoss={yieldLoss}
+                onYieldLossChange={(value) => {
+                  setAssumptionsEdited(true);
+                  setYieldLoss(value);
+                }}
+                price={price}
+                onPriceChange={(value) => {
+                  setAssumptionsEdited(true);
+                  setPrice(value);
+                }}
+                expectedYield={expectedYield}
+                onExpectedYieldChange={(value) => {
+                  setAssumptionsEdited(true);
+                  setExpectedYield(value);
+                }}
+                damageDate={damageDate}
+                onDamageDateChange={(value) => {
+                  setDamageDate(value);
+                  setEventWeather(null);
+                }}
+                legacyRecoveryContent={recoveryContent}
+                cardRecoveryContent={cardRecoveryContent}
+                onOpenRecovery={() => setRecoveryCardStep(1)}
+                historical={boundary.length >= 3 ? historical : null}
+                climateLoading={boundary.length >= 3 ? climateLoading : false}
+                terrain={terrain}
+                cropOptions={CROP_OPTIONS}
+                previousCropOptions={PREVIOUS_CROP_OPTIONS}
+                activeLotId={activeLotId}
+                activeLotName={activeLotName}
+                onRenameActiveLot={setActiveLotName}
+                savedLots={lotsCache.lots}
+                onSelectSavedLot={handleSelectSavedLot}
+                onRenameSavedLot={handleRenameSavedLot}
+                onStartNewLot={handleStartNewLot}
+                onDeleteSavedLot={handleDeleteSavedLot}
+                cachedPlannerResult={plannerResult}
+                cachedPlannedDate={plannedDate}
+                onPlannedDateChange={setPlannedDate}
               />
-            )}
-            {page === "prevention" && <><div hidden={advisorOpen}><NextCropPlanner location={location} locationConfirmed={locationConfirmed} farm={farm} onUpdate={updateFarm} terrain={terrain} onResult={setPlannerResult} onAskAdvisor={askAboutResult} /></div>{advisorContent}</>}
-            {page === "recovery" && recoveryContent}
-            {page === "evidence" && <section className="panel"><h2>Next-crop sources</h2><p>Open your next-crop result for the exact NASA history, crop requirements, conditions and crops withheld. Suggestions compare historical patterns and global reference ranges; they are not forecasts or validated local prescriptions.</p><Button onClick={() => goTo("prevention")}>Open crop planner</Button></section>}
-
-
-            {SHOW_API_SOURCES && <ApiSources />}
-            <footer className="page-footer">
-              <span>
-                <Sprout size={14} /> Made for the seasons ahead.
-              </span>
-              {SHOW_FOOTER_NASA_INFO && (
-                <span>
-                  NASABUKID <span className="footer-divider">·</span> NASA Space Apps demo{" "}
-                  <span className="footer-divider">·</span> Historical NASA access · Crop screening ·
-                  Gemini advisor
-                </span>
-              )}
-            </footer>
-          </div>
-        )}
-        <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
-
-        {false && (
-          <nav
-            className="bottom-nav-dock"
-            aria-label="Mobile navigation"
-            aria-hidden={!isMobile ? "true" : undefined}
-          >
-            {NAV.filter((item) => item.id !== "evidence").map((item) => {
-              const Icon = item.icon;
-              const isActive = page === item.id;
-              if (item.isCenter) {
-                return (
+            ) : (
+              <div className="page-wrap">
+                <div className="glass-brand-row">
                   <button
-                    key={item.id}
-                    className={`bottom-nav-item bottom-nav-center ${isActive ? "bottom-nav-center-active" : ""}`}
-                    aria-label={item.label}
-                    onClick={() => goTo(item.id)}
+                    type="button"
+                    className="glass-brand-pill"
+                    onClick={() => goTo(page === "overview" ? "landing" : "overview")}
+                    title={page === "overview" ? "Return to Landing Page" : "Return to Overview"}
                   >
-                    <span className="center-icon-wrap">
-                      <Icon size={22} strokeWidth={2.4} />
+                    <span className="glass-brand-mark">
+                      <Sprout size={18} strokeWidth={2} />
                     </span>
-                    <span className="bottom-nav-label">{item.label}</span>
+                    <span className="brand-name">
+                      <span className="brand-nasa">NASA</span>
+                      <span className="brand-bukid">BUKID</span>
+                    </span>
                   </button>
-                );
-              }
-              return (
-                <button
-                  key={item.id}
-                  className={`bottom-nav-item ${isActive ? "bottom-nav-active" : ""}`}
-                  aria-label={item.label}
-                  onClick={() => goTo(item.id)}
-                >
-                  <span className="bottom-nav-icon">
-                    <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
-                    {item.id === "recovery" && <span className="nav-live-dot" />}
+                  <LanguageTogglePill variant="hud" />
+                </div>
+                {page !== "overview" && (
+                  <div className="page-intro">
+                    <div>
+                      <span className="eyebrow">
+                        <MapPin size={13} className="eyebrow-icon" /> {farm.place || "Location not set"}
+                      </span>
+                      <h1>{pageTitle[page]}</h1>
+                      <p className="intro-copy">
+                        {page === "farm"
+                          ? "Set your location, boundary, and field details for customized recommendations."
+                          : page === "prevention"
+                            ? "Compare climate-ready crop rotation plans for your field."
+                            : page === "recovery"
+                              ? "Estimate potential crop loss and planning next steps."
+                              : page === "evidence"
+                                ? "Methodology and data sources behind rotation scores."
+                                : ""}
+                      </p>
+                    </div>
+                    <Button variant="outline" className="intro-home" onClick={() => goTo("overview")}>
+                      <ArrowLeft size={16} /> Overview
+                    </Button>
+                  </div>
+                )}
+
+                {page === "overview" && (
+                  <OverviewPage
+                    farm={farm}
+                    boundary={boundary}
+                    location={location}
+                    scenario={scenario}
+                    rotationName={plannerResult?.inputKey === nextCropInputKey(location, farm, terrain) ? plannerResult.result.suggestions[0]?.crop ?? "No crop cleared screening" : "Plan your next crop"}
+                    hazard={hazard}
+                    onLocationFound={(coords) => {
+                      updateLocation(coords);
+                    }}
+                    onPlan={() => goTo("farm")}
+                    onFullMap={() => goTo("fullmap")}
+                    onRecover={() => goTo("recovery")}
+                    onPrevention={() => goTo("prevention")}
+                    onChat={() => setAdvisorOpen(true)}
+                  />
+                )}
+                {page === "farm" && (
+                  <FarmPage
+                    farm={farm}
+                    location={location}
+                    boundary={boundary}
+                    onBoundary={updateBoundary}
+                    onLocation={updateLocation}
+                    onUpdate={updateFarm}
+                    onContinue={() => goTo("prevention")}
+                  />
+                )}
+                {page === "prevention" && <><div hidden={advisorOpen}><NextCropPlanner location={location} locationConfirmed={locationConfirmed} farm={farm} onUpdate={updateFarm} terrain={terrain} onResult={setPlannerResult} onAskAdvisor={askAboutResult} /></div>{advisorContent}</>}
+                {page === "recovery" && recoveryContent}
+                {page === "evidence" && <section className="panel"><h2>Next-crop sources</h2><p>Open your next-crop result for the exact NASA history, crop requirements, conditions and crops withheld. Suggestions compare historical patterns and global reference ranges; they are not forecasts or validated local prescriptions.</p><Button onClick={() => goTo("prevention")}>Open crop planner</Button></section>}
+
+
+                {SHOW_API_SOURCES && <ApiSources />}
+                <footer className="page-footer">
+                  <span>
+                    <Sprout size={14} /> Made for the seasons ahead.
                   </span>
-                  <span className="bottom-nav-label">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        )}
-      </main>
+                  {SHOW_FOOTER_NASA_INFO && (
+                    <span>
+                      NASABUKID <span className="footer-divider">·</span> NASA Space Apps demo{" "}
+                      <span className="footer-divider">·</span> Historical NASA access · Crop screening ·
+                      Gemini advisor
+                    </span>
+                  )}
+                </footer>
+              </div>
+            )}
+            <div hidden={page !== "farm"}><FarmPublicData location={location} confirmed={locationConfirmed} onApply={applyContext} /></div>
 
-
-
-    </div>
+            {false && (
+              <nav
+                className="bottom-nav-dock"
+                aria-label="Mobile navigation"
+                aria-hidden={!isMobile ? "true" : undefined}
+              >
+                {NAV.filter((item) => item.id !== "evidence").map((item) => {
+                  const Icon = item.icon;
+                  const isActive = page === item.id;
+                  if (item.isCenter) {
+                    return (
+                      <button
+                        key={item.id}
+                        className={`bottom-nav-item bottom-nav-center ${isActive ? "bottom-nav-center-active" : ""}`}
+                        aria-label={item.label}
+                        onClick={() => goTo(item.id)}
+                      >
+                        <span className="center-icon-wrap">
+                          <Icon size={22} strokeWidth={2.4} />
+                        </span>
+                        <span className="bottom-nav-label">{item.label}</span>
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      key={item.id}
+                      className={`bottom-nav-item ${isActive ? "bottom-nav-active" : ""}`}
+                      aria-label={item.label}
+                      onClick={() => goTo(item.id)}
+                    >
+                      <span className="bottom-nav-icon">
+                        <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+                        {item.id === "recovery" && <span className="nav-live-dot" />}
+                      </span>
+                      <span className="bottom-nav-label">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            )}
+          </main>
+        </div>
+      )}
+    </LocaleProvider>
   );
 }
 
@@ -953,6 +1214,8 @@ function LandingPage({
 }: {
   onSelectMode: (mode: "rotation" | "recovery") => void;
 }) {
+  const { locale, isSwitching } = useAppLocale();
+  const isCeb = locale === "ceb";
   const [activeSlide, setActiveSlide] = useState(0);
 
   useEffect(() => {
@@ -970,6 +1233,9 @@ function LandingPage({
 
   return (
     <div className="landing-root">
+      <div className="landing-lang-float">
+        <LanguageTogglePill variant="landing" />
+      </div>
       <div className="landing-backdrop-stage" aria-hidden="true">
         {LANDING_BACKDROPS.map((slide, index) => (
           <img
@@ -987,7 +1253,7 @@ function LandingPage({
       <div className="landing-ambient-glow" aria-hidden="true" />
       <div className="landing-ambient-grid" aria-hidden="true" />
 
-      <main className="landing-center-stage">
+      <main className={`landing-center-stage ${isSwitching ? "is-locale-switching" : ""}`}>
         <div className="landing-brand-lockup">
           <div className="landing-emblem" aria-hidden="true">
             <svg viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1017,10 +1283,16 @@ function LandingPage({
         </div>
 
         <p className="landing-tagline">
-          Bukidnon satellite field intelligence for seasonal crop planning &amp; post-disaster farm recovery.
+          {isCeb
+            ? "Giya gikan sa satellite sa NASA alang sa pagplano sa tanom ug pagbawi human sa kalamidad sa Bukidnon."
+            : "Bukidnon satellite field intelligence for seasonal crop planning & post-disaster farm recovery."}
         </p>
 
-        <div className="landing-mode-actions" role="group" aria-label="Choose workspace mode">
+        <div
+          className="landing-mode-actions"
+          role="group"
+          aria-label={isCeb ? "Pilia ang buluhaton" : "Choose workspace mode"}
+        >
           <button
             type="button"
             className="landing-mode-btn is-rotation"
@@ -1030,8 +1302,12 @@ function LandingPage({
               <Sprout size={20} strokeWidth={2.1} />
             </span>
             <span className="landing-mode-copy">
-              <strong>Crop Rotation</strong>
-              <small>Next-season plans &amp; soil health</small>
+              <strong>{isCeb ? "Pagliso sa Tanom" : "Crop Rotation"}</strong>
+              <small>
+                {isCeb
+                  ? "Plano sa sunod nga tingtanom ug kahimsog sa yuta"
+                  : "Next-season plans & soil health"}
+              </small>
             </span>
             <ArrowRight size={17} className="landing-mode-arrow" />
           </button>
@@ -1045,8 +1321,12 @@ function LandingPage({
               <ShieldAlert size={20} strokeWidth={2.1} />
             </span>
             <span className="landing-mode-copy">
-              <strong>Disaster Recovery</strong>
-              <small>Storm check, loss estimate &amp; replanting</small>
+              <strong>{isCeb ? "Pagbawi sa Kalamidad" : "Disaster Recovery"}</strong>
+              <small>
+                {isCeb
+                  ? "Pagsusi sa bagyo, banabana sa alkansi, ug pagtanom pag-usab"
+                  : "Storm check, loss estimate & replanting"}
+              </small>
             </span>
             <ArrowRight size={17} className="landing-mode-arrow" />
           </button>
@@ -1507,22 +1787,25 @@ function RecoveryPage({
   onContinueStep?: () => void;
   onBackStep?: () => void;
 }) {
+  const { locale } = useAppLocale();
+  const isCeb = locale === "ceb";
   const HazardIcon = HAZARD_RATES[hazard].icon;
+  const localizedSteps = translateRecoverySteps(hazard, RECOVERY_STEPS[hazard], locale);
   const stepOnePanel = (
     <section className="panel recovery-form-panel">
       <div className="panel-top">
         <div>
           <span className="panel-eyebrow">
-            <HeartHandshake size={13} /> FIRST, A FEW DETAILS{" "}
+            <HeartHandshake size={13} /> {isCeb ? "UNA, PIPILA KA DETALYE" : "FIRST, A FEW DETAILS"}{" "}
             <span className="panel-demotag">DEMO</span>
           </span>
-          <h2>Tell us about the event.</h2>
+          <h2>{isCeb ? "Isulti kanamo ang nahitabo." : "Tell us about the event."}</h2>
         </div>
         <span className="step-number">
           01 <span>/ {embedStep ? "02" : "03"}</span>
         </span>
       </div>
-      <Label className="form-section-label">What happened?</Label>
+      <Label className="form-section-label">{isCeb ? "Unsa ang nahitabo?" : "What happened?"}</Label>
       <div className="hazard-options">
         {(Object.keys(HAZARD_RATES) as Hazard[]).map((value) => {
           const Icon = HAZARD_RATES[value].icon;
@@ -1534,7 +1817,7 @@ function RecoveryPage({
               onClick={() => setHazard(value)}
             >
               <Icon size={17} />
-              <span>{value}</span>
+              <span>{translateHazardName(value, locale)}</span>
               {hazard === value && <Check size={13} className="hazard-check" />}
             </button>
           );
@@ -1542,7 +1825,7 @@ function RecoveryPage({
       </div>
       <div className="form-grid recovery-fields">
         <div className="form-field">
-          <Label htmlFor="damage-date">When did it happen?</Label>
+          <Label htmlFor="damage-date">{isCeb ? "Kanus-a kini nahitabo?" : "When did it happen?"}</Label>
           <Input
             id="damage-date"
             type="date"
@@ -1551,7 +1834,7 @@ function RecoveryPage({
           />
         </div>
         <div className="form-field">
-          <Label htmlFor="recovery-area">Farm area (ha)</Label>
+          <Label htmlFor="recovery-area">{isCeb ? "Gidak-on sa uma (ha)" : "Farm area (ha)"}</Label>
           <Input
             id="recovery-area"
             type="number"
@@ -1565,57 +1848,76 @@ function RecoveryPage({
       <div className="photo-heading">
         <div>
           <Label>
-            Crop photo <span className="optional-label">OPTIONAL</span>
+            {isCeb ? "Litrato sa tanom" : "Crop photo"}{" "}
+            <span className="optional-label">{isCeb ? "OPSYONAL" : "OPTIONAL"}</span>
           </Label>
           <span className="photo-caption">
-            Add a photo or explore using the labeled sample.
+            {isCeb
+              ? "Pagdugang og litrato o tan-awa ang gimarkahan nga sampol."
+              : "Add a photo or explore using the labeled sample."}
           </span>
         </div>
         <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
-          <Upload size={14} /> Add a photo
+          <Upload size={14} /> {isCeb ? "Pagdugang og litrato" : "Add a photo"}
         </Button>
         <input
           ref={uploadRef}
           className="sr-only"
           type="file"
           accept="image/*"
-          aria-label="Upload crop photo"
+          aria-label={isCeb ? "Pag-upload og litrato sa tanom" : "Upload crop photo"}
           onChange={(event) => pickPhoto(event.target.files?.[0])}
         />
       </div>
       <button
         className="photo-preview"
         onClick={() => uploadRef.current?.click()}
-        aria-label="Choose a crop photo"
+        aria-label={isCeb ? "Pilia ang litrato sa tanom" : "Choose a crop photo"}
       >
         <img
           src={photo.src}
           alt={
             photo.sample
-              ? "Sample farm crop in waterlogged soil"
-              : "Farmer-uploaded crop photo; not analyzed"
+              ? isCeb
+                ? "Sampol nga tanom sa yutang napundo ang tubig"
+                : "Sample farm crop in waterlogged soil"
+              : isCeb
+                ? "Litrato gikan sa mag-uuma; wala gi-analisar sa AI"
+                : "Farmer-uploaded crop photo; not analyzed"
           }
         />
         <span className="photo-badge">
-          <ImagePlus size={12} /> {photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
+          <ImagePlus size={12} />{" "}
+          {photo.sample
+            ? isCeb
+              ? "SAMPOL NGA LITRATO"
+              : "SAMPLE PHOTO"
+            : isCeb
+              ? "IMONG LITRATO"
+              : "YOUR PHOTO"}
         </span>
         <span className="photo-overlay">
           <span>
-            <Upload size={16} /> Change photo
+            <Upload size={16} /> {isCeb ? "Ilisi ang litrato" : "Change photo"}
           </span>
         </span>
       </button>
       <span className="file-caption">
-        {photo.name} <span>· Image preview stays in this browser only</span>
+        {photo.sample && isCeb ? "Sampol · mais nga nabahaan" : photo.name}{" "}
+        <span>
+          {isCeb
+            ? "· Ang litrato magpabilin lamang niining browser"
+            : "· Image preview stays in this browser only"}
+        </span>
       </span>
       <div className="observations">
         <div className="observation-head">
           <span>
-            <BadgeCheck size={14} /> SAMPLE OBSERVATIONS
+            <BadgeCheck size={14} /> {isCeb ? "SAMPOL NGA OBSSERBASYON" : "SAMPLE OBSERVATIONS"}
           </span>
-          <span>NOT AI-ANALYZED</span>
+          <span>{isCeb ? "WALA GI-ANALISAR SA AI" : "NOT AI-ANALYZED"}</span>
         </div>
-        <p>{HAZARD_RATES[hazard].observation}</p>
+        <p>{translateHazardObservation(hazard, HAZARD_RATES[hazard].observation, locale)}</p>
       </div>
       {embedStep === 1 && onContinueStep && (
         <Button
@@ -1623,7 +1925,7 @@ function RecoveryPage({
           className="drawer-recovery-continue-btn"
           onClick={onContinueStep}
         >
-          <span>Continue</span>
+          <span>{isCeb ? "Padayon" : "Continue"}</span>
           <ArrowRight size={15} />
         </Button>
       )}
@@ -1635,10 +1937,10 @@ function RecoveryPage({
       <div className="panel-top">
         <div>
           <span className="panel-eyebrow">
-            <BarChart3 size={13} /> PLANNING ESTIMATE{" "}
+            <BarChart3 size={13} /> {isCeb ? "BANABANA SA PAGPLANO" : "PLANNING ESTIMATE"}{" "}
             <span className="panel-demotag">DEMO</span>
           </span>
-          <h2>A starting point, not a verdict.</h2>
+          <h2>{isCeb ? "Pasiuna nga giya, dili pinal nga hukom." : "A starting point, not a verdict."}</h2>
         </div>
         <span className="step-number">
           02 <span>/ {embedStep ? "02" : "03"}</span>
@@ -1646,7 +1948,9 @@ function RecoveryPage({
       </div>
       <div className="form-grid loss-assumptions">
         <div className="form-field">
-          <Label htmlFor="yield-assumption">Expected yield (kg/ha)</Label>
+          <Label htmlFor="yield-assumption">
+            {isCeb ? "Gilauman nga ani (kg/ha)" : "Expected yield (kg/ha)"}
+          </Label>
           <Input
             id="yield-assumption"
             type="number"
@@ -1657,7 +1961,9 @@ function RecoveryPage({
           />
         </div>
         <div className="form-field">
-          <Label htmlFor="price-assumption">Farmgate price (₱/kg)</Label>
+          <Label htmlFor="price-assumption">
+            {isCeb ? "Presyo sa umahan (₱/kg)" : "Farmgate price (₱/kg)"}
+          </Label>
           <Input
             id="price-assumption"
             type="number"
@@ -1669,29 +1975,35 @@ function RecoveryPage({
         </div>
       </div>
       <p className="historical-copy">
-        Defaults are sample corn assumptions. Enter crop-specific yield and price for{" "}
-        {farm.crop}. Gross revenue at risk excludes costs and insurance.
+        {isCeb
+          ? `Ang default nga mga numero gibase sa sampol nga mais. Isulod ang hustong ani ug presyo alang sa ${translateCropName(farm.crop, "ceb")}. Ang kita nga nameligro wala maglakip sa gasto ug insurance.`
+          : `Defaults are sample corn assumptions. Enter crop-specific yield and price for ${farm.crop}. Gross revenue at risk excludes costs and insurance.`}
       </p>
       <RangeField
         id="affected-area"
-        label="Area affected"
+        label={isCeb ? "Bahin nga naapektuhan" : "Area affected"}
         value={affected}
         setValue={setAffected}
-        help="Share of total farm area"
+        help={isCeb ? "Bahin sa tibuok uma" : "Share of total farm area"}
       />
       <RangeField
         id="yield-loss"
-        label="Expected yield loss on affected area"
+        label={isCeb ? "Gilauman nga pagkawala sa ani" : "Expected yield loss on affected area"}
         value={yieldLoss}
         setValue={setYieldLoss}
-        help="Illustrative estimate"
+        help={isCeb ? "Banabana nga sampol" : "Illustrative estimate"}
       />
       <div className="calculation-box">
         <span className="calculation-title">
-          <span /> GROSS REVENUE AT RISK
+          <span /> {isCeb ? "GROSS NGA KITA NGA NAMELIGRO" : "GROSS REVENUE AT RISK"}
         </span>
         <div className="calculation-total">
-          {validLossInputs ? PHP.format(loss) : "Enter valid assumptions"} <span>PHP</span>
+          {validLossInputs
+            ? PHP.format(loss)
+            : isCeb
+              ? "Isulod ang hustong numero"
+              : "Enter valid assumptions"}{" "}
+          <span>PHP</span>
         </div>
         <div className="calculation-equation">
           <span>{farm.area} ha</span>
@@ -1705,15 +2017,16 @@ function RecoveryPage({
           <span>₱{price}/kg</span>
         </div>
         <div className="calculation-foot">
-          Farm area × affected share × entered yield × yield-loss fraction × entered price.
-          Figures are editable planning assumptions, not a verified claim.
+          {isCeb
+            ? "Gidak-on × bahin nga naapektuhan × gilauman nga ani × porsyento sa kadaot × presyo. Kini nga mga numero mabaylo-baylo nga banabana ug dili opisyal nga claim."
+            : "Farm area × affected share × entered yield × yield-loss fraction × entered price. Figures are editable planning assumptions, not a verified claim."}
         </div>
       </div>
       <div className="next-steps-label">
-        <ShieldCheck size={15} /> POSSIBLE NEXT STEPS
+        <ShieldCheck size={15} /> {isCeb ? "POSIBLENG SUNOD NGA LAKANG" : "POSSIBLE NEXT STEPS"}
       </div>
       <div className="next-steps">
-        {RECOVERY_STEPS[hazard].map((step, index) => (
+        {localizedSteps.map((step, index) => (
           <span key={step}>
             <span>{index + 1}</span>
             {step}
@@ -1722,7 +2035,9 @@ function RecoveryPage({
       </div>
       <div className="form-grid loss-assumptions">
         <div className="form-field">
-          <Label htmlFor="recovery-plant-date">Planned next planting</Label>
+          <Label htmlFor="recovery-plant-date">
+            {isCeb ? "Giplano nga sunod nga pagtanom" : "Planned next planting"}
+          </Label>
           <Input
             id="recovery-plant-date"
             type="date"
@@ -1732,7 +2047,9 @@ function RecoveryPage({
           />
         </div>
         <div className="form-field">
-          <Label htmlFor="recovery-drainage">Current field drainage</Label>
+          <Label htmlFor="recovery-drainage">
+            {isCeb ? "Kasamtangang agianan sa tubig" : "Current field drainage"}
+          </Label>
           <select
             id="recovery-drainage"
             className="form-select"
@@ -1740,33 +2057,37 @@ function RecoveryPage({
             onChange={(event) => onUpdateFarm("drainage", event.target.value)}
           >
             {["Moderate", "Good", "Poor", "Unknown"].map((value) => (
-              <option key={value}>{value}</option>
+              <option key={value} value={value}>
+                {translateFieldOption(value, locale)}
+              </option>
             ))}
           </select>
         </div>
       </div>
       <p className="historical-copy">
-        These farmer-reported inputs update the same profile and demo comparison used in
-        prevention. Confirm field readiness before planting.
+        {isCeb
+          ? "Kini nga impormasyon gikan sa mag-uuma mopabag-o usab sa profile sa pagplano. Kumpirmaha ang kahandam sa yuta una magtanom."
+          : "These farmer-reported inputs update the same profile and demo comparison used in prevention. Confirm field readiness before planting."}
       </p>
       <div className="recovery-actions">
         {embedStep === 2 && onBackStep && (
           <Button type="button" variant="outline" onClick={onBackStep}>
-            <ArrowLeft size={14} /> Back
+            <ArrowLeft size={14} /> {isCeb ? "Balik" : "Back"}
           </Button>
         )}
         <Button disabled={!farm.planted || farm.planted < damageDate} onClick={onPlan}>
-          Compare next-season options <ArrowRight size={15} />
+          {isCeb ? "Itandi ang mga kapilian sa sunod nga tingtanom" : "Compare next-season options"}{" "}
+          <ArrowRight size={15} />
         </Button>
         {!embedStep && (
           <Button variant="ghost" onClick={onChat}>
-            <MessageCircle size={15} /> Talk it through
+            <MessageCircle size={15} /> {isCeb ? "Pangutana sa AI" : "Talk it through"}
           </Button>
         )}
       </div>
       {!embedStep && (
         <span className="step-number recovery-step">
-          03 <span>/ 03</span> <span>YOUR NEXT SEASON</span>
+          03 <span>/ 03</span> <span>{isCeb ? "SUNOD NGA TINGTANOM" : "YOUR NEXT SEASON"}</span>
         </span>
       )}
     </section>
@@ -1802,8 +2123,10 @@ function RecoveryPage({
       <div className="recovery-disclaimer">
         <HazardIcon size={15} />
         <span>
-          <strong>Friendly reminder.</strong> This demo can’t diagnose crop damage or replace an
-          on-site assessment by an agricultural expert.
+          <strong>{isCeb ? "Pahinumdom." : "Friendly reminder."}</strong>{" "}
+          {isCeb
+            ? "Kini nga demo dili makadayagnos sa kadaot sa tanom o makapuli sa personal nga pagsusi sa eksperto sa agrikultura."
+            : "This demo can’t diagnose crop damage or replace an on-site assessment by an agricultural expert."}
         </span>
       </div>
     </div>
