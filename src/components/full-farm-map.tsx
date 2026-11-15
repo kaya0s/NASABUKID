@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, Globe, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, ShieldAlert, ShieldCheck, Sprout, Sun, ThermometerSun, Trash2, Waves, Wind, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, FileDown, Globe, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, ShieldAlert, ShieldCheck, Sprout, Sun, ThermometerSun, Trash2, Waves, Wind, X, ZoomIn, ZoomOut } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import { Button } from "@/components/ui/button";
 import { NextCropPlanner, type PlannerResult } from "@/components/next-crop-planner";
+import { PrintReport } from "@/components/print-report";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -492,6 +493,7 @@ export function FullFarmMap({
   terrain = null,
   cropOptions = DEFAULT_CROP_OPTIONS,
   previousCropOptions = DEFAULT_PREVIOUS_CROP_OPTIONS,
+  recoveryDetails,
 }: {
   location: Coordinates;
   onChange: (point: Coordinates) => void;
@@ -529,6 +531,12 @@ export function FullFarmMap({
   terrain?: { elevation: number; slopePercent: number } | null;
   cropOptions?: readonly string[];
   previousCropOptions?: readonly string[];
+  recoveryDetails?: {
+    actualPlantingDate?: string;
+    growthStage?: string;
+    durationHours?: string;
+    observations?: string;
+  };
 }) {
   const [mapStyle, setMapStyle] = useState<MapStyle>("satellite");
   const [heatmap, setHeatmap] = useState<HeatmapLayer>("none");
@@ -552,6 +560,8 @@ export function FullFarmMap({
   const [drawerTab, setDrawerTab] = useState<"rotation" | "recovery">(
     !ENABLE_RECOVERY_MODAL && advisoryMode === "recovery" ? "recovery" : "rotation",
   );
+  const [printPlan, setPrintPlan] = useState<PlannerResult | null>(null);
+  const [exportMode, setExportMode] = useState(false);
   const leftPanelRef = useRef<HTMLElement | null>(null);
   const rightPanelRef = useRef<HTMLElement | null>(null);
   const addressRef = useRef<HTMLTextAreaElement | null>(null);
@@ -610,6 +620,50 @@ export function FullFarmMap({
   const moisture = historical?.soilMoisturePercent ?? null;
   const surfaceTemp = historical?.surfaceTempC ?? climateSummary?.temperature ?? null;
   const rain30 = historical?.recent30dRainfallMm ?? climateSummary?.rainfall ?? null;
+
+  // Stable identity: NextCropPlanner emits its result from an effect keyed on this callback.
+  const handlePlannerResult = useCallback(
+    (value: PlannerResult | null) => {
+      setPrintPlan(value);
+      onPlannerResult?.(value);
+    },
+    [onPlannerResult],
+  );
+
+  const printArea = Number(farm.area);
+  const printYield = Number(activeExpectedYield);
+  const printPrice = Number(activePrice);
+  const printLoss =
+    Number.isFinite(printArea) &&
+    printArea >= 0 &&
+    Number.isFinite(printYield) &&
+    printYield >= 0 &&
+    Number.isFinite(printPrice) &&
+    printPrice >= 0
+      ? calculateEstimatedLoss({
+          areaHectares: printArea,
+          affectedFraction: activeAffected / 100,
+          expectedYieldKgPerHectare: printYield,
+          yieldLossFraction: activeYieldLoss / 100,
+          pricePerKg: printPrice,
+        })
+      : null;
+
+  // Export waits one paint so the printable report exists before the print dialog snapshots it.
+  useEffect(() => {
+    if (!exportMode) return undefined;
+    const originalTitle = document.title;
+    document.title = "NASABUKID - Crop Rotation & Disaster Recovery Report";
+    const timer = window.setTimeout(() => {
+      window.print();
+      document.title = originalTitle;
+      setExportMode(false);
+    }, 60);
+    return () => {
+      window.clearTimeout(timer);
+      document.title = originalTitle;
+    };
+  }, [exportMode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1914,6 +1968,15 @@ export function FullFarmMap({
               <div className="full-map-profile-head-right">
                 <button
                   type="button"
+                  className="full-map-export-pdf-btn"
+                  title="Export the rotation result and disaster recovery loss check as one PDF"
+                  onClick={() => setExportMode(true)}
+                >
+                  <FileDown size={13} />
+                  <span>Export PDF</span>
+                </button>
+                <button
+                  type="button"
                   className="full-map-profile-close"
                   aria-label="Close advisory panel"
                   onClick={() => setProfileOpen(false)}
@@ -1987,9 +2050,7 @@ export function FullFarmMap({
 
                 if (!SHOW_COMPACT_RECOVERY_UI && cardRecoveryContent) {
                   return (
-                    <div className="drawer-card-recovery-wrap">
-                      {cardRecoveryContent}
-                    </div>
+                    <div className="drawer-card-recovery-wrap">{cardRecoveryContent}</div>
                   );
                 }
 
@@ -2209,7 +2270,7 @@ export function FullFarmMap({
                 farm={farm}
                 onUpdate={onUpdateFarm}
                 terrain={terrain}
-                onResult={onPlannerResult}
+                onResult={handlePlannerResult}
                 onAskAdvisor={onAskAdvisor}
               />
             )}
@@ -2476,6 +2537,33 @@ export function FullFarmMap({
           </div>
         )
       }
+      {/* Printable-only report: hidden on screen, shown by @media print in styles.css */}
+      {exportMode ? (
+        <PrintReport
+          farm={farm}
+          location={location}
+          terrain={terrain}
+          historical={historical}
+          ndvi={modisNdvi?.latestNdvi ?? null}
+          plan={printPlan}
+          recovery={{
+            hazard: activeHazard,
+            damageDate: activeDamageDate,
+            actualPlantingDate: recoveryDetails?.actualPlantingDate ?? "",
+            growthStage: recoveryDetails?.growthStage ?? "",
+            durationHours: recoveryDetails?.durationHours ?? "",
+            observations: recoveryDetails?.observations ?? "",
+            affected: activeAffected,
+            yieldLoss: activeYieldLoss,
+            expectedYield: activeExpectedYield,
+            price: activePrice,
+            area: farm.area,
+            loss: printLoss,
+            replantNote: RECOVERY_HAZARDS[activeHazard].replantNote,
+            steps: RECOVERY_STEPS[activeHazard],
+          }}
+        />
+      ) : null}
     </div >
   );
 }
