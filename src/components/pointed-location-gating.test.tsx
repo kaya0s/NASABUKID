@@ -219,7 +219,7 @@ describe("pointed location gating for lots and stats cards", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Open Field Desk" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Crop Rotation/i }));
 
     const leafletScript = document.querySelector(
       'script[src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"]',
