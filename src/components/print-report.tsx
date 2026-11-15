@@ -2,7 +2,7 @@ import type { PlannerResult } from "@/components/next-crop-planner";
 import { CROP_PROFILES } from "@/lib/fieldshift-demo";
 import { summarizeWeather, type HistoricalWeather } from "@/lib/nasa-power";
 
-export type PrintHazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
+export type PrintHazard = "Flooding" | "Drought" | "Typhoon" | "Heat" | "Human-caused";
 
 export type PrintFarm = {
   place: string;

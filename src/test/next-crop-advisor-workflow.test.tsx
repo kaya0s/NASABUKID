@@ -69,6 +69,7 @@ it.each([false, true])(
       </QueryClientProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: /Crop Rotation/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Advisory" }));
     expect(screen.queryByRole("button", { name: "Open AI field advisor" })).not.toBeInTheDocument();
     const date = `${new Date().getFullYear() + 1}-12-15`;
     fireEvent.change(screen.getByLabelText("When will you plant next?"), {
@@ -170,3 +171,46 @@ it.each([false, true])(
     expect(screen.getByLabelText("When will you plant next?")).toHaveValue(date);
   },
 );
+
+it("opens recovery advice from the final recovery step with recovery context", async () => {
+  vi.stubGlobal("scrollTo", vi.fn());
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
+  Element.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/advisor")
+      return { ok: true, json: async () => ({ answer: "Record the affected area and check drainage." }) };
+    throw new Error("Public service offline");
+  }));
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <App />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Disaster Recovery/ }));
+  fireEvent.change(screen.getByLabelText("Damaged crop"), { target: { value: "Banana" } });
+  fireEvent.click(screen.getByRole("button", { name: "Human-caused" }));
+  fireEvent.change(screen.getByLabelText("What happened? (optional)"), { target: { value: "A nearby fire reached the field." } });
+  expect(screen.getByText("No event photo added")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  expect(screen.getByLabelText("Expected yield (kg/ha)")).toHaveValue(null);
+  expect(screen.getByText("Enter valid assumptions")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Ask AI advisor about this recovery" }));
+  expect(screen.getByRole("region", { name: "AI field advisor" })).toBeInTheDocument();
+  expect(screen.getByText("Damage recovery")).toBeInTheDocument();
+  expect(screen.queryByText("Crop planning")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "What should I check first?" }));
+  await screen.findByText("Record the affected area and check drainage.");
+  const call = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/advisor")!;
+  const payload = JSON.parse(String((call as unknown as [string, RequestInit])[1].body));
+  expect(payload.context.workflow).toBe("recovery");
+  expect(payload.context.farm.crop).toBe("Banana");
+  expect(payload.context.recovery.expectedYieldKgPerHectare).toBeNull();
+  expect(payload.context.recovery.hazard).toBe("Human-caused");
+  expect(payload.context.recovery.observations).toBe("A nearby fire reached the field.");
+  expect(payload.context.weather).toBeNull();
+  expect(payload.history).toEqual([]);
+});

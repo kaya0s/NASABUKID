@@ -41,12 +41,12 @@ import {
   Plus,
   RotateCcw,
   Send,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Sprout,
   Sun,
   Thermometer,
-  Upload,
   Waves,
   Wheat,
   Wind,
@@ -81,6 +81,8 @@ import {
   type ClimateScenario,
   SAMPLE_CORN_PRICE_PER_KG,
   SAMPLE_YIELD_KG_PER_HA,
+  RECOVERY_DEMO_OBSERVATIONS,
+  type RecoveryHazard,
 } from "@/lib/fieldshift-demo";
 
 export const Route = createFileRoute("/")({
@@ -116,7 +118,7 @@ type Page =
   | "prevention"
   | "recovery"
   | "evidence";
-type Hazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
+type Hazard = RecoveryHazard;
 type Farm = {
   place: string;
   area: string;
@@ -174,43 +176,13 @@ const SEED_FARM: Farm = {
  */
 const SHOW_API_SOURCES = false;
 const SHOW_FOOTER_NASA_INFO = false;
-const HAZARD_RATES: Record<
-  Hazard,
-  {
-    affected: number;
-    yieldLoss: number;
-    observation: string;
-    icon: typeof Waves;
-  }
-> = {
-  Flooding: {
-    affected: 65,
-    yieldLoss: 35,
-    observation:
-      "Standing water observed between rows; sample leaf yellowing and stem lodging visible.",
-    icon: Waves,
-  },
-  Drought: {
-    affected: 50,
-    yieldLoss: 28,
-    observation:
-      "Sample observation: leaf curling and dry surface soil are consistent with water stress.",
-    icon: Sun,
-  },
-  Typhoon: {
-    affected: 75,
-    yieldLoss: 42,
-    observation:
-      "Sample observation: wind lodging and damaged leaf tissue may reduce harvestable yield.",
-    icon: Wind,
-  },
-  Heat: {
-    affected: 45,
-    yieldLoss: 25,
-    observation:
-      "Sample observation: leaf-edge scorch and midday wilting may indicate heat stress.",
-    icon: Thermometer,
-  },
+const SAMPLE_RECOVERY_PHOTO = { src: floodCorn, name: "Sample · waterlogged corn", sample: true } as const;
+const HAZARD_ICONS: Record<Hazard, typeof Waves> = {
+  Flooding: Waves,
+  Drought: Sun,
+  Typhoon: Wind,
+  Heat: Thermometer,
+  "Human-caused": ShieldAlert,
 };
 const PHP = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -263,15 +235,7 @@ function FieldShift() {
   const [damageDate, setDamageDate] = useState("2026-10-29");
   const [affected, setAffected] = useState(65);
   const [yieldLoss, setYieldLoss] = useState(35);
-  const [photo, setPhoto] = useState<{
-    src: string;
-    name: string;
-    sample: boolean;
-  }>({
-    src: floodCorn,
-    name: "Sample · waterlogged corn",
-    sample: true,
-  });
+  const photo = SAMPLE_RECOVERY_PHOTO;
   const [advisorLanguage, setAdvisorLanguage] = useState<AdvisorLanguage>("auto");
   const [advisorOpen, setAdvisorOpen] = useState(false);
   const explainedPlanKey = useRef<string | null>(null);
@@ -279,7 +243,6 @@ function FieldShift() {
   const [chatMessages, setChatMessages] = useState<AdvisorMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const uploadRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -447,35 +410,30 @@ function FieldShift() {
 
   function updateFarm(key: keyof Farm, value: string) {
     setProfileEdited(true);
+    if (key === "crop" && value !== farm.crop) {
+      setExpectedYield("");
+      setPrice("");
+    }
     setFarm((current) => ({ ...current, [key]: value }));
-  }
-
-  function pickPhoto(file?: File) {
-    if (!file || !file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string")
-        setPhoto({ src: reader.result, name: file.name, sample: false });
-    };
-    reader.readAsDataURL(file);
   }
 
   function changeHazard(next: Hazard) {
     setHazard(next);
+    setEventWeather(null);
   }
 
-  async function sendQuestion(question = chatInput, workflow = advisorWorkflow, language = advisorLanguage) {
+  async function sendQuestion(question = chatInput, workflow = advisorWorkflow, language = advisorLanguage, history = chatMessages) {
     const text = question.trim();
     if (!text || chatBusy) return;
-    const previousMessages = chatMessages.filter((message) => !message.error);
-    if (chatMessages.at(-1)?.error && previousMessages.at(-1)?.role === "user" && previousMessages.at(-1)?.text === text) previousMessages.pop();
+    const previousMessages = history.filter((message) => !message.error);
+    if (history.at(-1)?.error && previousMessages.at(-1)?.role === "user" && previousMessages.at(-1)?.text === text) previousMessages.pop();
     setChatBusy(true);
     setChatMessages([...previousMessages, { role: "user", text }]);
     setChatInput("");
     try {
       const numberOrNull = (value: string) =>
         value.trim() && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
-      const weather = workflow === "recovery" ? eventWeather : null;
+      const weather = workflow === "recovery" && hazard !== "Human-caused" ? eventWeather : null;
       const currentPlan = currentPlannerResult && plannerResult
         ? { ...currentPlannerResult, climateMonths: plannerResult.climateMonths }
         : null;
@@ -572,13 +530,26 @@ function FieldShift() {
   }
 
   function askAboutResult() {
+    if (advisorWorkflow !== "prevention") {
+      setChatMessages([]);
+      setChatInput("");
+    }
     setAdvisorWorkflow("prevention");
     setAdvisorOpen(true);
     const key = plannerResult?.inputKey;
     if (currentPlannerResult && key && (explainedPlanKey.current !== key || chatMessages.at(-1)?.error) && !chatBusy) {
       explainedPlanKey.current = key;
-      void sendQuestion("Explain this next-crop result briefly: why this crop for my planting date, the relevant weather or soil evidence, and the most important check before planting.", "prevention");
+      void sendQuestion("Explain this next-crop result briefly: why this crop for my planting date, the relevant weather or soil evidence, and the most important check before planting.", "prevention", advisorLanguage, advisorWorkflow === "prevention" ? chatMessages : []);
     }
+  }
+
+  function openRecoveryAdvisor() {
+    if (advisorWorkflow !== "recovery") {
+      setChatMessages([]);
+      setChatInput("");
+    }
+    setAdvisorWorkflow("recovery");
+    setAdvisorOpen(true);
   }
 
   const pageTitle: Record<Page, string> = {
@@ -596,6 +567,8 @@ function FieldShift() {
     farm,
     hazard,
     setHazard: changeHazard,
+    observations,
+    setObservations,
     damageDate,
     setDamageDate: (value: string) => {
       setDamageDate(value);
@@ -625,18 +598,8 @@ function FieldShift() {
     onUpdateFarm: updateFarm,
     location,
     photo,
-    pickPhoto,
-    uploadRef,
     loss,
-    onPlan: () => {
-      if (page === "fullmap") {
-        setMapAdvisoryMode("rotation");
-        setAdvisorWorkflow("prevention");
-      } else {
-        goTo("prevention");
-      }
-    },
-    onChat: () => setAdvisorOpen(true),
+    onPlan: openRecoveryAdvisor,
   };
 
   const recoveryContent = (
@@ -731,6 +694,8 @@ function FieldShift() {
     return (
       <LandingPage
         onSelectMode={(mode) => {
+          setChatMessages([]);
+          setChatInput("");
           setMapAdvisoryMode(mode);
           setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
           if (mode === "recovery") setRecoveryCardStep(1);
@@ -760,6 +725,10 @@ function FieldShift() {
             onBrandClick={() => goTo("landing")}
             advisoryMode={mapAdvisoryMode}
             onAdvisoryModeChange={(mode) => {
+              if ((mode === "recovery" ? "recovery" : "prevention") !== advisorWorkflow) {
+                setChatMessages([]);
+                setChatInput("");
+              }
               setMapAdvisoryMode(mode);
               setAdvisorWorkflow(mode === "recovery" ? "recovery" : "prevention");
             }}
@@ -1464,6 +1433,8 @@ function RecoveryPage({
   farm,
   hazard,
   setHazard,
+  observations,
+  setObservations,
   damageDate,
   setDamageDate,
   affected,
@@ -1471,11 +1442,8 @@ function RecoveryPage({
   yieldLoss,
   setYieldLoss,
   photo,
-  pickPhoto,
-  uploadRef,
   loss,
   onPlan,
-  onChat,
   price,
   setPrice,
   expectedYield,
@@ -1498,6 +1466,8 @@ function RecoveryPage({
   farm: Farm;
   hazard: Hazard;
   setHazard: (hazard: Hazard) => void;
+  observations: string;
+  setObservations: (value: string) => void;
   damageDate: string;
   setDamageDate: (date: string) => void;
   affected: number;
@@ -1505,16 +1475,13 @@ function RecoveryPage({
   yieldLoss: number;
   setYieldLoss: (value: number) => void;
   photo: { src: string; name: string; sample: boolean };
-  pickPhoto: (file?: File) => void;
-  uploadRef: React.RefObject<HTMLInputElement | null>;
   loss: number;
   onPlan: () => void;
-  onChat: () => void;
   embedStep?: 1 | 2;
   onContinueStep?: () => void;
   onBackStep?: () => void;
 }) {
-  const HazardIcon = HAZARD_RATES[hazard].icon;
+  const HazardIcon = HAZARD_ICONS[hazard];
   const stepOnePanel = (
     <section className="panel recovery-form-panel">
       <div className="panel-top">
@@ -1526,13 +1493,13 @@ function RecoveryPage({
           <h2>Tell us about the event.</h2>
         </div>
         <span className="step-number">
-          01 <span>/ {embedStep ? "02" : "03"}</span>
+          01 <span>/ 02</span>
         </span>
       </div>
       <Label className="form-section-label">What happened?</Label>
       <div className="hazard-options">
-        {(Object.keys(HAZARD_RATES) as Hazard[]).map((value) => {
-          const Icon = HAZARD_RATES[value].icon;
+        {(Object.keys(RECOVERY_DEMO_OBSERVATIONS) as Hazard[]).map((value) => {
+          const Icon = HAZARD_ICONS[value];
           return (
             <button
               className={`hazard-option ${hazard === value ? "hazard-selected" : ""}`}
@@ -1547,7 +1514,30 @@ function RecoveryPage({
           );
         })}
       </div>
+      {hazard === "Human-caused" && (
+        <div className="form-field">
+          <Label htmlFor="recovery-incident">What happened? (optional)</Label>
+          <Textarea
+            id="recovery-incident"
+            maxLength={1200}
+            placeholder="For example, equipment damage, a spill, or a fire. Include only what you observed."
+            value={observations}
+            onChange={(event) => setObservations(event.target.value)}
+          />
+        </div>
+      )}
       <div className="form-grid recovery-fields">
+        <div className="form-field">
+          <Label htmlFor="recovery-current-crop">Damaged crop</Label>
+          <select
+            id="recovery-current-crop"
+            className="form-select"
+            value={farm.crop}
+            onChange={(event) => onUpdateFarm("crop", event.target.value)}
+          >
+            {CROP_OPTIONS.map((crop) => <option key={crop}>{crop}</option>)}
+          </select>
+        </div>
         <div className="form-field">
           <Label htmlFor="damage-date">When did it happen?</Label>
           <Input
@@ -1571,49 +1561,25 @@ function RecoveryPage({
       </div>
       <div className="photo-heading">
         <div>
-          <Label>
-            Crop photo <span className="optional-label">OPTIONAL</span>
-          </Label>
-          <span className="photo-caption">
-            Add a photo or explore using the labeled sample.
-          </span>
+          <Label>Sample crop photo</Label>
+          <span className="photo-caption">Fixed demo image · not analyzed</span>
         </div>
-        <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
-          <Upload size={14} /> Add a photo
-        </Button>
-        <input
-          ref={uploadRef}
-          className="sr-only"
-          type="file"
-          accept="image/*"
-          aria-label="Upload crop photo"
-          onChange={(event) => pickPhoto(event.target.files?.[0])}
-        />
       </div>
-      <button
-        className="photo-preview"
-        onClick={() => uploadRef.current?.click()}
-        aria-label="Choose a crop photo"
-      >
-        <img
-          src={photo.src}
-          alt={
-            photo.sample
-              ? "Sample farm crop in waterlogged soil"
-              : "Farmer-uploaded crop photo; not analyzed"
-          }
-        />
+      <div className="photo-preview photo-preview-static">
+        {photo.sample && hazard === "Human-caused" ? (
+          <span className="photo-empty">No event photo added</span>
+        ) : (
+          <img
+            src={photo.src}
+            alt={photo.sample ? "Sample farm crop in waterlogged soil" : "Farmer-uploaded crop photo; not analyzed"}
+          />
+        )}
         <span className="photo-badge">
-          <ImagePlus size={12} /> {photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
+          <ImagePlus size={12} /> {photo.sample && hazard === "Human-caused" ? "NO PHOTO" : photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
         </span>
-        <span className="photo-overlay">
-          <span>
-            <Upload size={16} /> Change photo
-          </span>
-        </span>
-      </button>
+      </div>
       <span className="file-caption">
-        {photo.name} <span>· Image preview stays in this browser only</span>
+        {photo.sample && hazard === "Human-caused" ? "No photo added" : photo.name} <span>· Image preview stays in this browser only</span>
       </span>
       <div className="observations">
         <div className="observation-head">
@@ -1622,7 +1588,7 @@ function RecoveryPage({
           </span>
           <span>NOT AI-ANALYZED</span>
         </div>
-        <p>{HAZARD_RATES[hazard].observation}</p>
+        <p>{RECOVERY_DEMO_OBSERVATIONS[hazard]}</p>
       </div>
       {embedStep === 1 && onContinueStep && (
         <Button
@@ -1648,7 +1614,7 @@ function RecoveryPage({
           <h2>A starting point, not a verdict.</h2>
         </div>
         <span className="step-number">
-          02 <span>/ {embedStep ? "02" : "03"}</span>
+          02 <span>/ 02</span>
         </span>
       </div>
       <div className="form-grid loss-assumptions">
@@ -1705,11 +1671,11 @@ function RecoveryPage({
           <i>×</i>
           <span>{affected}%</span>
           <i>×</i>
-          <span>{Number(expectedYield).toLocaleString()} kg/ha</span>
+          <span>{expectedYield.trim() ? Number(expectedYield).toLocaleString() : "—"} kg/ha</span>
           <i>×</i>
           <span>{yieldLoss}%</span>
           <i>×</i>
-          <span>₱{price}/kg</span>
+          <span>₱{price || "—"}/kg</span>
         </div>
         <div className="calculation-foot">
           Farm area × affected share × entered yield × yield-loss fraction × entered price.
@@ -1727,17 +1693,7 @@ function RecoveryPage({
           </span>
         ))}
       </div>
-      <div className="form-grid loss-assumptions">
-        <div className="form-field">
-          <Label htmlFor="recovery-plant-date">Planned next planting</Label>
-          <Input
-            id="recovery-plant-date"
-            type="date"
-            min={damageDate}
-            value={farm.planted}
-            onChange={(event) => onUpdateFarm("planted", event.target.value)}
-          />
-        </div>
+      {hazard !== "Human-caused" && <div className="form-grid loss-assumptions">
         <div className="form-field">
           <Label htmlFor="recovery-drainage">Current field drainage</Label>
           <select
@@ -1751,10 +1707,10 @@ function RecoveryPage({
             ))}
           </select>
         </div>
-      </div>
+      </div>}
       <p className="historical-copy">
-        These farmer-reported inputs update the same profile and demo comparison used in
-        prevention. Confirm field readiness before planting.
+        These farmer-reported inputs help the advisor discuss the event and possible next steps.
+        Confirm field conditions locally before acting.
       </p>
       <div className="recovery-actions">
         {embedStep === 2 && onBackStep && (
@@ -1762,20 +1718,10 @@ function RecoveryPage({
             <ArrowLeft size={14} /> Back
           </Button>
         )}
-        <Button disabled={!farm.planted || farm.planted < damageDate} onClick={onPlan}>
-          Compare next-season options <ArrowRight size={15} />
+        <Button type="button" onClick={onPlan}>
+          Ask AI advisor about this recovery <MessageCircle size={15} />
         </Button>
-        {!embedStep && (
-          <Button variant="ghost" onClick={onChat}>
-            <MessageCircle size={15} /> Talk it through
-          </Button>
-        )}
       </div>
-      {!embedStep && (
-        <span className="step-number recovery-step">
-          03 <span>/ 03</span> <span>YOUR NEXT SEASON</span>
-        </span>
-      )}
     </section>
   );
 
@@ -1798,12 +1744,12 @@ function RecoveryPage({
     <div className="recovery-layout">
       <div className="recovery-left">{stepOnePanel}</div>
       <aside className="recovery-right">
-        <HistoricalWeatherPanel
+        {hazard !== "Human-caused" && <HistoricalWeatherPanel
           key={`${location.latitude}:${location.longitude}:${damageDate}`}
           location={location}
           eventDate={damageDate}
           onLoaded={onWeather}
-        />
+        />}
         {stepTwoPanel}
       </aside>
       <div className="recovery-disclaimer">
