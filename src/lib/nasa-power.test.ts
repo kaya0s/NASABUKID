@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
+  calendarWeather,
+  fetchRecentNasaClimate,
   fetchHistoricalWeather,
   parseWeather,
   summarizeWeather,
@@ -146,4 +148,26 @@ describe("Monthly chart aggregation", () => {
       { date: "2025-02-02", ndvi: 0.74 },
     ]);
   });
+});
+
+it("aligns cross-year weather by calendar month and preserves missing coverage", () => {
+  const days = Array.from({ length: 31 }, (_, i) => ({
+    date: `2024-12-${String(i + 1).padStart(2, "0")}`,
+    rainfall: 2,
+    temperature: 24,
+  }));
+  const result = calendarWeather([...days, { date: "2025-01-01", rainfall: 0, temperature: 25 }]);
+  expect(result.monthlyRainfall).toEqual([...Array(11).fill(null), 62]);
+  expect(result.monthlyTemperature[11]).toBe(24);
+  expect(
+    calendarWeather(days.map((day, i) => ({ ...day, rainfall: i === 0 ? null : 2 })))
+      .monthlyRainfall[11],
+  ).toBeNull();
+  expect(calendarWeather(days.map((day) => ({ ...day, rainfall: 0 }))).monthlyRainfall[11]).toBe(0);
+});
+
+it("does not substitute last year's data when recent weather fails", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+  await expect(fetchRecentNasaClimate(location)).rejects.toThrow("503");
+  expect(fetch).toHaveBeenCalledTimes(1);
 });

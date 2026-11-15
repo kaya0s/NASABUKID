@@ -96,3 +96,63 @@ it("reports a missing Google key without making a provider request", async () =>
     vi.unstubAllEnvs();
   }
 });
+
+it("retries a temporary DNS failure once with the same timeout and request", async () => {
+  const error = new TypeError("fetch failed", { cause: { code: "EAI_AGAIN" } });
+  const fetchMock = vi
+    .fn()
+    .mockRejectedValueOnce(error)
+    .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: "Short answer." } }] }));
+  vi.stubGlobal("fetch", fetchMock);
+  const response = await server.fetch(request(fixture), { GEMINI_API_KEY: "test-only" }, {});
+  expect(response.status).toBe(200);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls[1]).toEqual(fetchMock.mock.calls[0]);
+});
+it("stops after one DNS retry and keeps the connection failure visible", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockRejectedValue(new TypeError("fetch failed", { cause: { code: "EAI_AGAIN" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  const response = await server.fetch(request(fixture), { GEMINI_API_KEY: "test-only" }, {});
+  expect(response.status).toBe(502);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(await response.text()).toContain("could not reach Google");
+});
+
+it("returns plain-text replies without Markdown formatting", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      Response.json({
+        choices: [{ message: { content: "**Corn**\n* Check pH 5.1.\n* Confirm drainage." } }],
+      }),
+    ),
+  );
+  const response = await server.fetch(request(fixture), { GEMINI_API_KEY: "test-only" }, {});
+  expect(await response.json()).toEqual({ answer: "Corn\nCheck pH 5.1.\nConfirm drainage." });
+});
+
+it("logs only a safe connection code, never the API key or provider error message", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValue(
+          new TypeError("secret-key-and-prompt", { cause: { code: "ECONNREFUSED" } }),
+        ),
+    );
+    const response = await server.fetch(
+      request(fixture),
+      { GEMINI_API_KEY: "secret-key-and-prompt" },
+      {},
+    );
+    expect(response.status).toBe(502);
+    expect(log).toHaveBeenCalledWith("Advisor connection failure", { reason: "ECONNREFUSED" });
+    expect(JSON.stringify(log.mock.calls)).not.toContain("secret-key-and-prompt");
+  } finally {
+    log.mockRestore();
+  }
+});

@@ -187,6 +187,23 @@ export function monthlyWeather(days: WeatherDay[]) {
   });
 }
 
+// Calendar slots preserve unknown months; these observations are not a climatology.
+export function calendarWeather(days: WeatherDay[]) {
+  const months = monthlyWeather(days);
+  return {
+    monthlyRainfall: Array.from(
+      { length: 12 },
+      (_, index) =>
+        months.find((month) => Number(month.month.slice(5)) === index + 1)?.rainfall ?? null,
+    ),
+    monthlyTemperature: Array.from(
+      { length: 12 },
+      (_, index) =>
+        months.find((month) => Number(month.month.slice(5)) === index + 1)?.temperature ?? null,
+    ),
+  };
+}
+
 export async function fetchRecentNasaClimate(
   location: Coordinates,
   signal?: AbortSignal,
@@ -196,22 +213,7 @@ export async function fetchRecentNasaClimate(
   const end = endDate.toISOString().slice(0, 10);
   const start = startDate.toISOString().slice(0, 10);
   const telemetryParams = "PRECTOTCORR,T2M,GWETTOP,TS";
-  try {
-    return await fetchHistoricalWeather(location, start, end, signal, telemetryParams);
-  } catch (err) {
-    if (signal?.aborted) throw err;
-    const fallbackEnd = new Date(endDate);
-    fallbackEnd.setUTCFullYear(fallbackEnd.getUTCFullYear() - 1);
-    const fallbackStart = new Date(startDate);
-    fallbackStart.setUTCFullYear(fallbackStart.getUTCFullYear() - 1);
-    return fetchHistoricalWeather(
-      location,
-      fallbackStart.toISOString().slice(0, 10),
-      fallbackEnd.toISOString().slice(0, 10),
-      signal,
-      telemetryParams,
-    );
-  }
+  return fetchHistoricalWeather(location, start, end, signal, telemetryParams);
 }
 
 export interface ModisNdviPoint {
@@ -294,4 +296,115 @@ export async function fetchRecentModisNdvi(
   } catch {
     return null;
   }
+}
+
+export type ClimateMonth = {
+  month: number;
+  validYears: number;
+  rainfallMm: number | null;
+  rainfallMinMm: number | null;
+  rainfallMaxMm: number | null;
+  temperatureC: number | null;
+};
+export type RotationClimate = {
+  months: ClimateMonth[];
+  annualRainfallMm: number | null;
+  completeYears: number;
+  startYear: number;
+  endYear: number;
+  sourceUrl: string;
+  retrievedAt: string;
+};
+const monthlyResponseSchema = z.object({
+  header: z.object({ fill_value: z.number().finite() }),
+  parameters: z.object({
+    PRECTOTCORR: z.object({ units: z.enum(["mm/day", "mm/month", "mm"]) }),
+    T2M: z.object({ units: z.literal("C") }),
+  }),
+  properties: z.object({
+    parameter: z.object({
+      PRECTOTCORR: z.record(z.number().finite().nullable()),
+      T2M: z.record(z.number().finite().nullable()),
+    }),
+  }),
+});
+export function rotationClimateUrl(location: Coordinates, endYear: number) {
+  coordinatesSchema.parse(location);
+  if (!Number.isInteger(endYear) || endYear < 1990 || endYear >= new Date().getUTCFullYear()) {
+    throw new Error("Choose ten complete historical years from 1981 onward.");
+  }
+  return `https://power.larc.nasa.gov/api/temporal/monthly/point?${new URLSearchParams({
+    parameters: "PRECTOTCORR,T2M",
+    community: "AG",
+    latitude: String(location.latitude),
+    longitude: String(location.longitude),
+    start: String(endYear - 9),
+    end: String(endYear),
+    format: "JSON",
+  })}`;
+}
+export function parseRotationClimate(
+  payload: unknown,
+  endYear: number,
+  sourceUrl: string,
+): RotationClimate {
+  const data = monthlyResponseSchema.parse(payload);
+  const annual: number[] = [];
+  const observations: Array<Array<{ rain: number; temperature: number }>> = Array.from(
+    { length: 12 },
+    () => [],
+  );
+  for (let year = endYear - 9; year <= endYear; year++) {
+    const yearRain: number[] = [];
+    for (let month = 1; month <= 12; month++) {
+      const key = `${year}${String(month).padStart(2, "0")}`;
+      const rain = data.properties.parameter.PRECTOTCORR[key];
+      const temperature = data.properties.parameter.T2M[key];
+      const validRain = rain != null && rain !== data.header.fill_value && rain >= 0;
+      const total = validRain
+        ? rain *
+          (data.parameters.PRECTOTCORR.units === "mm/day"
+            ? new Date(Date.UTC(year, month, 0)).getUTCDate()
+            : 1)
+        : null;
+      if (total !== null) yearRain.push(total);
+      if (total !== null && temperature != null && temperature !== data.header.fill_value) {
+        observations[month - 1]!.push({ rain: total, temperature });
+      }
+    }
+    if (yearRain.length === 12) annual.push(yearRain.reduce((sum, value) => sum + value, 0));
+  }
+  return {
+    months: observations.map((rows, index) => ({
+      month: index + 1,
+      validYears: rows.length,
+      rainfallMm: rows.length ? rows.reduce((sum, row) => sum + row.rain, 0) / rows.length : null,
+      rainfallMinMm: rows.length ? Math.min(...rows.map((row) => row.rain)) : null,
+      rainfallMaxMm: rows.length ? Math.max(...rows.map((row) => row.rain)) : null,
+      temperatureC: rows.length
+        ? rows.reduce((sum, row) => sum + row.temperature, 0) / rows.length
+        : null,
+    })),
+    annualRainfallMm: annual.length
+      ? annual.reduce((sum, value) => sum + value, 0) / annual.length
+      : null,
+    completeYears: annual.length,
+    startYear: endYear - 9,
+    endYear,
+    sourceUrl,
+    retrievedAt: new Date().toISOString(),
+  };
+}
+export async function fetchRotationClimate(
+  location: Coordinates,
+  endYear: number,
+  signal: AbortSignal,
+) {
+  const url = rotationClimateUrl(location, endYear);
+  const response = await fetch(url, {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(45000)]),
+  });
+  if (!response.ok)
+    throw new Error(`NASA history is unavailable (${response.status}). Please retry.`);
+  return parseRotationClimate(await response.json(), endYear, url);
 }

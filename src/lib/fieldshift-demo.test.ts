@@ -155,7 +155,28 @@ it("flags acidic soil, steep slope suitability, fertilizer stages, and pest clim
   });
   expect(advisory.suitability.status).toBe("Not suitable for intensive tillage");
   expect(advisory.soilProfile.phStatus).toBe("Acidic");
-  expect(advisory.soilProfile.avoidFertilizers.some((item) => item.includes("Ammonium Sulfate"))).toBe(true);
+  expect(
+    advisory.soilProfile.avoidFertilizers.some((item) => item.includes("Ammonium Sulfate")),
+  ).toBe(true);
   expect(advisory.fertilizerStages.length).toBeGreaterThanOrEqual(2);
   expect(advisory.climateTiming.bestPlantingWindow.length).toBeGreaterThan(0);
+});
+
+it("keeps unknown monthly rain on the demo baseline instead of treating it as drought", () => {
+  expect(rotationsForFarm("Typical", { ...farm, monthlyRainfall: Array(12).fill(null) })).toEqual(
+    rotationsForFarm("Typical", farm),
+  );
+});
+
+it("compares rotation options using known rain and preserves assumptions for unknown rain", () => {
+  const context = { ...farm, crop: "Corn", previous: "Corn" };
+  const baseline = buildRotationStrategies("Typical", context);
+  expect(buildRotationStrategies("Typical", { ...context, monthlyRainfall: Array(12).fill(null) }))
+    .toEqual(baseline);
+  const dry = buildRotationStrategies("Typical", { ...context, monthlyRainfall: Array(12).fill(0) });
+  expect(dry.every((item) => item.scores.water === 0)).toBe(true);
+  expect(buildRotationStrategies("El Niño-like", context).find((item) => item.id === "resilient-diversification")?.nextCrop).toBe("Sorghum");
+  for (const item of baseline) {
+    expect(item.total).toBe(calculateRotationScore(item.scores));
+  }
 });

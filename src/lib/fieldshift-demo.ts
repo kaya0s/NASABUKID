@@ -1,3 +1,6 @@
+import { CROP_REQUIREMENTS, cropRequirementUrl, type CropRange } from "./crop-requirements";
+import type { RotationClimate } from "./nasa-power";
+
 export const SAMPLE_RECOVERY = { affected: 65, yieldLoss: 35 } as const;
 
 export type ClimateScenario = "Typical" | "El Niño-like" | "Wet";
@@ -137,7 +140,7 @@ export type DemoFarmContext = {
   drainage: string;
   irrigation: string;
   planted: string;
-  monthlyRainfall?: number[];
+  monthlyRainfall?: (number | null)[];
 };
 
 // shortcut: these thresholds and adjustments are illustrative, replace with locally validated crop rules before advisory use.
@@ -163,7 +166,7 @@ export function rotationsForFarm(scenario: ClimateScenario, farm: DemoFarmContex
         scores.water += 5;
         reasons.push("Reported irrigation: demo water rating +5; actual capacity is unverified.");
       }
-      if (rainfall !== undefined) {
+      if (rainfall != null) {
         const sampleMonthlyNeed =
           rotation.id === "cover" ? 90 : rotation.id === "root-crop" ? 110 : 130;
         scores.water = Math.min(100, (rainfall / sampleMonthlyNeed) * 100);
@@ -874,7 +877,7 @@ export function buildRotationStrategies(
       );
     }
 
-    if (rainfall !== undefined) {
+    if (rainfall != null) {
       const sampleMonthlyNeed =
         item.nextCrop === "Sorghum" || item.nextCrop === "Mungbean"
           ? 95
@@ -968,8 +971,8 @@ export function buildSoilAndAgronomyAdvisory(input: {
   irrigation: string;
   slopePercent: number | null;
   elevation: number | null;
-  monthlyRainfall?: number[];
-  monthlyTemperature?: number[];
+  monthlyRainfall?: (number | null)[];
+  monthlyTemperature?: (number | null)[];
 }): SoilAndAgronomyAdvisory {
   const {
     nextCrop,
@@ -1211,15 +1214,17 @@ export function buildSoilAndAgronomyAdvisory(input: {
   if (monthlyRainfall?.length === 12) {
     const idealMonths = monthlyRainfall
       .map((mm, idx) => ({ mm, name: monthNames[idx]! }))
-      .filter((m) => m.mm >= 110 && m.mm <= 240)
+      .filter((m) => m.mm != null && m.mm >= 110 && m.mm <= 240)
       .map((m) => m.name);
     const wettest = monthlyRainfall
       .map((mm, idx) => ({ mm, name: monthNames[idx]! }))
+      .filter((m): m is { mm: number; name: string } => m.mm != null)
       .sort((a, b) => b.mm - a.mm)[0];
     const warmest =
       monthlyTemperature?.length === 12
         ? monthlyTemperature
             .map((t, idx) => ({ t, name: monthNames[idx]! }))
+            .filter((m): m is { t: number; name: string } => m.t != null)
             .sort((a, b) => b.t - a.t)[0]
         : null;
 
@@ -1239,133 +1244,246 @@ export function buildSoilAndAgronomyAdvisory(input: {
   };
 }
 
-export interface CropDetectionResult {
-  detectedCrop: string;
-  confidencePct: number;
-  detectionMethod: string;
-  latestNdvi: number | null;
+export type NextCropField = {
+  crop: string;
+  previous: string;
+  planted: string;
+  ph: string;
+  soil: string;
+  drainage: string;
+  irrigation: string;
+};
+export type NextCropSuggestion = {
+  crop: string;
+  reasons: string[];
+  conditions: string[];
+  sourceUrl: string;
+  longTerm: boolean;
+};
+export type NextCropResult = {
+  planted: string;
+  suggestions: NextCropSuggestion[];
+  gaps: string[];
+  excluded: Array<{ crop: string; reasons: string[] }>;
+  climateSourceUrl: string;
+  startYear: number;
+  endYear: number;
+};
+export function nextCropInputKey(
+  location: { latitude: number; longitude: number },
+  farm: NextCropField,
+  terrain?: { elevation: number | null; slopePercent: number | null } | null,
+) {
+  return JSON.stringify([
+    location.latitude,
+    location.longitude,
+    farm.crop,
+    farm.previous,
+    farm.planted,
+    farm.ph,
+    farm.soil,
+    farm.drainage,
+    farm.irrigation,
+    terrain?.elevation ?? null,
+    terrain?.slopePercent ?? null,
+  ]);
 }
-
-export function detectPlantedCrop(input: {
-  elevationM: number | null;
-  moisturePct: number | null;
-  recent30dRainfallMm: number | null;
-  municipality?: string;
-  ndviPoints?: Array<{ date: string; ndvi: number }>;
-}): CropDetectionResult {
-  const elev = input.elevationM ?? 350;
-  const moisture = input.moisturePct ?? 45;
-  const rain = input.recent30dRainfallMm ?? 150;
-  const muni = (input.municipality ?? "").toLowerCase();
-  const points = input.ndviPoints ?? [];
-  const latestNdvi = points.length ? points[points.length - 1]!.ndvi : null;
-
-  if (points.length >= 4) {
-    const values = points.map((p) => p.ndvi);
-    const peak = Math.max(...values);
-    const min = Math.min(...values);
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const activeSteps = values.filter((v) => v >= 0.55).length;
-    const range = peak - min;
-
-    if (elev >= 700) {
-      if (mean >= 0.58 && range < 0.2) {
-        return {
-          detectedCrop: "Banana",
-          confidencePct: 79,
-          detectionMethod: "MODIS 250m NDVI + Elevation",
-          latestNdvi,
-        };
-      }
-      return {
-        detectedCrop: "Sweet potato",
-        confidencePct: 76,
-        detectionMethod: "MODIS 250m NDVI + Elevation",
-        latestNdvi,
-      };
-    }
-
-    // Sustained high greenness across 6 months (Sugarcane)
-    if (mean >= 0.68 && activeSteps >= Math.ceil(values.length * 0.7) && range <= 0.25) {
-      return {
-        detectedCrop: "Sugarcane",
-        confidencePct: 86,
-        detectionMethod: "MODIS 250m NDVI + Elevation",
-        latestNdvi,
-      };
-    }
-
-    // Moderate, steady year-round curve (Pineapple, especially northern/central Bukidnon)
-    if (mean >= 0.5 && mean <= 0.69 && range <= 0.2) {
-      return {
-        detectedCrop:
-          muni.includes("manolo") || muni.includes("sumilao") || muni.includes("maramag")
-            ? "Pineapple"
-            : "Cassava",
-        confidencePct: 81,
-        detectionMethod: "MODIS 250m NDVI + Elevation",
-        latestNdvi,
-      };
-    }
-
-    // Low water/planting dip followed by steady green-up under high soil moisture (Rice)
-    if (min <= 0.35 && moisture >= 60 && elev <= 500) {
-      return {
-        detectedCrop: "Rice",
-        confidencePct: 83,
-        detectionMethod: "MODIS 250m NDVI + Elevation",
-        latestNdvi,
-      };
-    }
-
-    // Short greenness spike (Mungbean / cover legume)
-    if (activeSteps <= 2 && peak >= 0.5 && peak <= 0.72) {
-      return {
-        detectedCrop: "Mungbean",
-        confidencePct: 77,
-        detectionMethod: "MODIS 250m NDVI + Elevation",
-        latestNdvi,
-      };
-    }
-
-    // Distinct rapid green-up peak (Yellow corn)
-    return {
-      detectedCrop: "Yellow corn",
-      confidencePct: peak >= 0.68 ? 85 : 78,
-      detectionMethod: "MODIS 250m NDVI + Elevation",
-      latestNdvi,
-    };
-  }
-
-  // Instant fallback: Bukidnon elevation + climate priors
-  if (elev >= 700) {
-    return {
-      detectedCrop: "Sweet potato",
-      confidencePct: 68,
-      detectionMethod: "Bukidnon Elevation & Climate Priors",
-      latestNdvi,
-    };
-  }
-  if (moisture >= 68 && rain >= 180 && elev <= 450) {
-    return {
-      detectedCrop: "Rice",
-      confidencePct: 72,
-      detectionMethod: "Bukidnon Elevation & Climate Priors",
-      latestNdvi,
-    };
-  }
-  if (muni.includes("manolo") || muni.includes("sumilao")) {
-    return {
-      detectedCrop: "Pineapple",
-      confidencePct: 71,
-      detectionMethod: "Bukidnon Elevation & Climate Priors",
-      latestNdvi,
-    };
-  }
-  return {
-    detectedCrop: elev <= 450 ? "Yellow corn" : "Sugarcane",
-    confidencePct: 74,
-    detectionMethod: "Bukidnon Elevation & Climate Priors",
-    latestNdvi,
+export function localPlanningDate(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+export function validNextPlantingDate(value: string, today = localPlanningDate()) {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number.isFinite(Date.parse(value)) &&
+    new Date(value).toISOString().slice(0, 10) === value &&
+    value >= today
+  );
+}
+// Pure demo screening of global reference ranges; matching is not verified local suitability.
+export function suggestNextCrops(
+  farm: NextCropField,
+  climate: RotationClimate,
+  terrain?: { elevation: number | null; slopePercent: number | null } | null,
+  today = localPlanningDate(),
+): NextCropResult {
+  const result: NextCropResult = {
+    planted: farm.planted,
+    suggestions: [],
+    gaps: [],
+    excluded: [],
+    climateSourceUrl: climate.sourceUrl,
+    startYear: climate.startYear,
+    endYear: climate.endYear,
   };
+  if (!validNextPlantingDate(farm.planted, today)) {
+    result.gaps.push("Enter a valid planting date from today onward.");
+    return result;
+  }
+  if (
+    !CROP_REQUIREMENTS.some((crop) => crop.crop === farm.crop) ||
+    ![...CROP_REQUIREMENTS.map((crop) => crop.crop), "Fallow", "Unknown"].includes(farm.previous)
+  ) {
+    result.gaps.push("Confirm your current and previous crops.");
+    return result;
+  }
+  const ph = farm.ph.trim() ? Number(farm.ph) : null;
+  if (ph !== null && (!Number.isFinite(ph) || ph < 0 || ph > 14)) {
+    result.gaps.push("Enter a soil pH from 0 to 14, or leave it unknown.");
+    return result;
+  }
+  if (
+    climate.completeYears < 8 ||
+    climate.annualRainfallMm === null ||
+    climate.months.length !== 12
+  ) {
+    result.gaps.push(
+      "At least eight complete years of rainfall are needed; no sample data was substituted.",
+    );
+    return result;
+  }
+  const planting = Date.parse(farm.planted);
+  const family = (name: string) => CROP_REQUIREMENTS.find((crop) => crop.crop === name)?.family;
+  const ranked: Array<{
+    suggestion: NextCropSuggestion;
+    unresolved: number;
+    optimal: number;
+    rotation: number;
+  }> = [];
+  for (const rule of CROP_REQUIREMENTS) {
+    const conflicts: string[] = [];
+    const conditions: string[] = [];
+    const reasons: string[] = [];
+    let optimal = 0;
+    const check = (value: number, range: CropRange, label: string) => {
+      if (value < range[2] || value > range[3])
+        conflicts.push(
+          `${label} is outside the published absolute range (${range[2]}–${range[3]}).`,
+        );
+      else if (value >= range[0] && value <= range[1]) optimal++;
+      else
+        conditions.push(
+          `${label} is within the broad limits but outside the published optimal range (${range[0]}–${range[1]}).`,
+        );
+    };
+    check(climate.annualRainfallMm, rule.annualRainfallMm, "Historical annual rainfall (mm/year)");
+    const monthIndices = new Set<number>();
+    for (let day = 0; day < rule.maxCycleDays; day++)
+      monthIndices.add(new Date(planting + day * 86400000).getUTCMonth());
+    const months = [...monthIndices].map((index) => climate.months[index]!);
+    if (
+      months.some(
+        (month) => month.validYears < 8 || month.temperatureC === null || month.rainfallMm === null,
+      )
+    ) {
+      conflicts.push("Not enough historical observations for this crop's growing-period months.");
+    } else {
+      const temperatures = months.map((month) => month.temperatureC!);
+      if (
+        temperatures.some((value) => value < rule.temperatureC[2] || value > rule.temperatureC[3])
+      )
+        conflicts.push(
+          "A growing-period monthly mean temperature falls outside the published limits.",
+        );
+      else if (
+        temperatures.every(
+          (value) => value >= rule.temperatureC[0] && value <= rule.temperatureC[1],
+        )
+      )
+        optimal++;
+      else
+        conditions.push("Some growing-period monthly temperatures fall outside the optimal range.");
+      reasons.push(
+        `Historical growing-period monthly temperatures: ${Math.min(...temperatures).toFixed(1)}–${Math.max(...temperatures).toFixed(1)} °C.`,
+      );
+    }
+    if (ph === null) conditions.push("Soil pH is unknown; confirm with a local soil test.");
+    else check(ph, rule.ph, "Soil pH");
+    if (!farm.drainage || farm.drainage === "Unknown")
+      conditions.push("Confirm field drainage before planting.");
+    else if (rule.drainage === "well" && farm.drainage === "Poor")
+      conflicts.push("Poor drainage conflicts with this crop's drainage screening requirement.");
+    else if (rule.drainage === "wet")
+      conditions.push(
+        "Rice reference describes wet-rice systems; confirm suitable water control and variety. Poor drainage alone does not establish suitability.",
+      );
+    else if (farm.drainage !== "Good")
+      conditions.push("Confirm that drainage is adequate for this crop.");
+    if (
+      terrain?.elevation != null &&
+      Number.isFinite(terrain.elevation) &&
+      terrain.elevation > rule.maxElevationM
+    )
+      conflicts.push("Mapped elevation exceeds the reference altitude limit.");
+    if (terrain?.elevation == null || !Number.isFinite(terrain.elevation))
+      conditions.push("Elevation is unknown; verify locally against the crop reference.");
+    if (terrain?.slopePercent == null || !Number.isFinite(terrain.slopePercent))
+      conditions.push("Slope is unknown; verify erosion and field access locally.");
+    else if (terrain.slopePercent >= 15)
+      conditions.push(
+        "Steep terrain: local erosion-control review is needed before cultivation (demo precaution).",
+      );
+    if (!farm.soil.trim() || farm.soil === "Unknown")
+      conditions.push("Soil texture is unknown; verify locally.");
+    else if (rule.optimalTextures.length) {
+      if (rule.optimalTextures.includes(farm.soil)) optimal++;
+      else
+        conditions.push(
+          "Confirm soil texture against the crop reference; imported percentages are not a field texture test.",
+        );
+    }
+    if (farm.irrigation === "Unknown" || !farm.irrigation)
+      conditions.push("Irrigation availability is unknown.");
+    else if (farm.irrigation !== "Rain-fed")
+      conditions.push(
+        "Confirm irrigation capacity; reported irrigation does not override rainfall limits.",
+      );
+    if (rule.longTerm)
+      conditions.push(
+        "Long-term crop: confirm land availability, variety and full production cycle; not a short-season rotation.",
+      );
+    if (rule.crop === "Banana")
+      conditions.push("Banana reference is Musa acuminata; confirm the intended local cultivar.");
+    if (conflicts.length) {
+      result.excluded.push({ crop: rule.crop, reasons: conflicts });
+      continue;
+    }
+    const rotation =
+      rule.crop === farm.crop || rule.crop === farm.previous
+        ? 0
+        : family(farm.crop) === rule.family
+          ? 1
+          : 2;
+    if (rotation === 2)
+      reasons.push(
+        "Changes crop family from the current crop; local pest and disease history still needs review.",
+      );
+    else
+      conditions.push(
+        "Repeats a recent crop or crop family; check pest carryover before choosing it.",
+      );
+    reasons.unshift(
+      `Historical annual rain averages ${Math.round(climate.annualRainfallMm)} mm across ${climate.completeYears} complete years, within this crop's broad reference limits.`,
+    );
+    ranked.push({
+      suggestion: {
+        crop: rule.crop,
+        reasons: reasons.slice(0, 3),
+        conditions,
+        sourceUrl: cropRequirementUrl(rule.sourceId),
+        longTerm: rule.longTerm,
+      },
+      unresolved: conditions.length,
+      optimal,
+      rotation,
+    });
+  }
+  ranked.sort(
+    (a, b) => a.unresolved - b.unresolved || b.optimal - a.optimal || b.rotation - a.rotation,
+  );
+  result.suggestions = ranked.slice(0, 3).map((item) => item.suggestion);
+  if (!result.suggestions.length)
+    result.gaps.push(
+      "No listed crop cleared the available weather and field screening. Review the constraints with a local agricultural technician.",
+    );
+  return result;
 }

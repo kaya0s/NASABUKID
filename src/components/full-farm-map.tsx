@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, Globe, GripHorizontal, Layers, Loader2, Locate, MapPin, Navigation, Pencil, RotateCcw, Search, ShieldAlert, ShieldCheck, Sprout, Sun, ThermometerSun, Trash2, Waves, Wind, X, ZoomIn, ZoomOut } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import { Button } from "@/components/ui/button";
+import { NextCropPlanner, type PlannerResult } from "@/components/next-crop-planner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,7 +16,7 @@ import {
 import { measureFarmBoundary } from "@/lib/farm-boundary";
 import { checkFarmLandUse, type LandUseCheckResult } from "@/lib/farm-context";
 import { RECOVERY_STEPS } from "@/lib/advisor";
-import { buildRotationStrategies, calculateEstimatedLoss, detectPlantedCrop, getCropProfile } from "@/lib/fieldshift-demo";
+import { calculateEstimatedLoss } from "@/lib/fieldshift-demo";
 import {
   fetchRecentModisNdvi,
   summarizeWeather,
@@ -462,6 +463,11 @@ export function FullFarmMap({
   areaLabel,
   farm,
   onUpdateFarm,
+  onPlannerResult,
+  advisorOpen = false,
+  advisorContent,
+  onAskAdvisor,
+  locationConfirmed = false,
   onContinue,
   onBrandClick,
   advisoryMode = "rotation",
@@ -494,6 +500,11 @@ export function FullFarmMap({
   areaLabel: string;
   farm: FarmProfileData;
   onUpdateFarm: (key: keyof FarmProfileData, value: string) => void;
+  onPlannerResult?: (value: PlannerResult | null) => void;
+  advisorOpen?: boolean;
+  advisorContent?: ReactNode;
+  onAskAdvisor?: () => void;
+  locationConfirmed?: boolean;
   onContinue?: () => void;
   onBrandClick?: () => void;
   advisoryMode?: AdvisoryMode;
@@ -592,28 +603,15 @@ export function FullFarmMap({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [recoveryModalOpen, onAdvisoryModeChange]);
-  const [expandedStrategyId, setExpandedStrategyId] = useState<string>("legume-break");
-  const [detailTab, setDetailTab] = useState<"proscons" | "pests">("proscons");
   const [modisNdvi, setModisNdvi] = useState<ModisNdviSeries | null>(null);
   const [ndviLoading, setNdviLoading] = useState(false);
-  const [manualCropOverride, setManualCropOverride] = useState(false);
 
   const climateSummary = historical ? summarizeWeather(historical.days) : null;
   const moisture = historical?.soilMoisturePercent ?? null;
   const surfaceTemp = historical?.surfaceTempC ?? climateSummary?.temperature ?? null;
   const rain30 = historical?.recent30dRainfallMm ?? climateSummary?.rainfall ?? null;
-  const elev = terrain?.elevation ?? historical?.nasaElevationM ?? null;
-  const slope = terrain?.slopePercent ?? null;
-  const cropDetection = detectPlantedCrop({
-    elevationM: elev,
-    moisturePct: moisture,
-    recent30dRainfallMm: rain30,
-    municipality: farm.place,
-    ndviPoints: modisNdvi?.points ?? [],
-  });
 
   useEffect(() => {
-    setManualCropOverride(false);
     const controller = new AbortController();
     setNdviLoading(true);
     void fetchRecentModisNdvi(location, controller.signal).then((series) => {
@@ -650,26 +648,6 @@ export function FullFarmMap({
     el.style.height = `${el.scrollHeight}px`;
   }, [farm.place, leftCardVisible]);
 
-  useEffect(() => {
-    if (
-      !manualCropOverride &&
-      boundary.length >= 3 &&
-      (profileOpen || farmCardOpen) &&
-      cropOptions.includes(cropDetection.detectedCrop) &&
-      farm.crop !== cropDetection.detectedCrop
-    ) {
-      onUpdateFarm("crop", cropDetection.detectedCrop);
-    }
-  }, [
-    manualCropOverride,
-    boundary.length,
-    profileOpen,
-    farmCardOpen,
-    cropDetection.detectedCrop,
-    cropOptions,
-    farm.crop,
-    onUpdateFarm,
-  ]);
   const [modalOffset, setModalOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{
@@ -1901,9 +1879,10 @@ export function FullFarmMap({
         rightCardVisible && (
           <aside
             ref={rightPanelRef}
-            className="full-map-profile-panel"
+            className={`full-map-profile-panel ${advisorOpen ? "is-advisor" : ""}`}
             aria-label="Crop rotation and disaster recovery"
           >
+            <div className="full-map-advisory-content" hidden={advisorOpen}>
             <div className="full-map-profile-head">
               <div>
                 <div className="drawer-badges-row">
@@ -2224,345 +2203,15 @@ export function FullFarmMap({
                 );
               })()
             ) : (
-              (() => {
-                const moistureTag =
-                  moisture === null ? "Loading" : moisture < 20 ? "Dry" : moisture > 65 ? "Very Wet" : "Just Right";
-                const currentProfile = getCropProfile(farm.crop);
-                const strategies = buildRotationStrategies("Typical", {
-                  ph: farm.ph.trim() ? Number(farm.ph) : NaN,
-                  drainage: farm.drainage,
-                  irrigation: farm.irrigation,
-                  planted: farm.planted,
-                  crop: farm.crop,
-                  previous: farm.previous,
-                  slopePercent: slope,
-                  soil: farm.soil,
-                });
-
-                return (
-                  <div className="drawer-rotation-body">
-                    {ENABLE_FARM_LOT_VERIFICATION && landUseCheck?.tier === "soft_confirm" && landUseCheck.message && (
-                      <div className="drawer-landuse-note" role="note">
-                        {landUseCheck.message}
-                      </div>
-                    )}
-                    <div className="drawer-telemetry-grid" aria-label="Farm weather and soil summary">
-                      <button
-                        type="button"
-                        className={`telemetry-tile is-smap is-action ${heatmap === "soil_moisture" ? "is-on" : ""}`}
-                        aria-pressed={heatmap === "soil_moisture"}
-                        title="Show soil moisture on the map"
-                        onClick={() => setHeatmap(heatmap === "soil_moisture" ? "none" : "soil_moisture")}
-                      >
-                        <div className="telemetry-tile-head">
-                          <Droplets size={14} />
-                          <span>MOISTURE</span>
-                        </div>
-                        <strong>{climateLoading ? "…" : moisture !== null ? `${moisture}%` : "—"}</strong>
-                        <small>{moistureTag}</small>
-                      </button>
-                      <button
-                        type="button"
-                        className={`telemetry-tile is-modis is-action ${heatmap === "lst" ? "is-on" : ""}`}
-                        aria-pressed={heatmap === "lst"}
-                        title="Show ground heat on the map"
-                        onClick={() => setHeatmap(heatmap === "lst" ? "none" : "lst")}
-                      >
-                        <div className="telemetry-tile-head">
-                          <ThermometerSun size={14} />
-                          <span>HEAT</span>
-                        </div>
-                        <strong>
-                          {climateLoading
-                            ? "…"
-                            : surfaceTemp !== null
-                              ? `${surfaceTemp.toFixed(1)}°C`
-                              : "—"}
-                        </strong>
-                        <small>Ground Temp</small>
-                      </button>
-                      <div className="telemetry-tile is-gpm">
-                        <div className="telemetry-tile-head">
-                          <CloudRain size={14} />
-                          <span>RAIN</span>
-                        </div>
-                        <strong>{climateLoading ? "…" : rain30 !== null ? `${Math.round(rain30)}mm` : "—"}</strong>
-                        <small>Last 30 Days</small>
-                      </div>
-                      <button
-                        type="button"
-                        className={`telemetry-tile is-ndvi is-action ${heatmap === "ndvi" ? "is-on" : ""}`}
-                        aria-pressed={heatmap === "ndvi"}
-                        title="Show plant health on the map"
-                        onClick={() => setHeatmap(heatmap === "ndvi" ? "none" : "ndvi")}
-                      >
-                        <div className="telemetry-tile-head">
-                          <Sprout size={14} />
-                          <span>HEALTH</span>
-                        </div>
-                        <strong>
-                          {ndviLoading
-                            ? "…"
-                            : modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
-                              ? modisNdvi.latestNdvi.toFixed(2)
-                              : heatmap === "ndvi"
-                                ? "On"
-                                : "—"}
-                        </strong>
-                        <small>
-                          {modisNdvi?.latestNdvi !== null && modisNdvi?.latestNdvi !== undefined
-                            ? modisNdvi.latestNdvi >= 0.5
-                              ? "Healthy"
-                              : modisNdvi.latestNdvi >= 0.25
-                                ? "Growing"
-                                : "Low"
-                            : "Greenness"}
-                        </small>
-                      </button>
-                    </div>
-
-                    {climateLoading || ndviLoading ? (
-                      <div
-                        className="drawer-rotation-skeleton"
-                        role="status"
-                        aria-live="polite"
-                        aria-label="Loading crop rotation and telemetry analysis"
-                      >
-                        <div className="drawer-current-crop-card drawer-skeleton-card" aria-hidden="true">
-                          <div className="drawer-crop-thumb drawer-skeleton-circle" />
-                          <div className="drawer-current-crop-info">
-                            <div className="drawer-current-crop-top">
-                              <span className="drawer-skeleton-bar" style={{ width: 92, height: 10 }} />
-                              <span className="drawer-skeleton-bar" style={{ width: 88, height: 22, borderRadius: 6 }} />
-                            </div>
-                            <div className="drawer-detection-row">
-                              <span className="drawer-skeleton-bar" style={{ width: 170, height: 18, borderRadius: 999 }} />
-                            </div>
-                            <span className="drawer-skeleton-bar" style={{ width: "68%", height: 14, marginTop: 4 }} />
-                            <span className="drawer-skeleton-bar" style={{ width: "95%", height: 11, marginTop: 6 }} />
-                            <span className="drawer-skeleton-bar" style={{ width: "78%", height: 11, marginTop: 4 }} />
-                            <div className="drawer-ndvi-sparkline">
-                              <span className="drawer-skeleton-bar" style={{ width: 120, height: 18, borderRadius: 4 }} />
-                              <span className="drawer-skeleton-bar" style={{ width: 130, height: 10 }} />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="drawer-sequence-heading" aria-hidden="true">
-                          <span className="drawer-skeleton-bar" style={{ width: 220, height: 11 }} />
-                        </div>
-
-                        <div className="drawer-timeline" aria-hidden="true">
-                          {[0, 1, 2].map((idx) => (
-                            <div key={idx} className="drawer-timeline-card drawer-skeleton-card">
-                              <div className="drawer-timeline-summary" style={{ cursor: "default" }}>
-                                <span className="timeline-step-num drawer-skeleton-circle" />
-                                <div className="drawer-crop-thumb drawer-skeleton-circle" />
-                                <div className="timeline-summary-copy">
-                                  <div className="timeline-meta-row">
-                                    <span className="drawer-skeleton-bar" style={{ width: 110, height: 10 }} />
-                                    <span className="drawer-skeleton-bar" style={{ width: 86, height: 16, borderRadius: 999 }} />
-                                  </div>
-                                  <span className="drawer-skeleton-bar" style={{ width: "64%", height: 14, marginTop: 4 }} />
-                                  <span className="drawer-skeleton-bar" style={{ width: "92%", height: 11, marginTop: 6 }} />
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="drawer-current-crop-card">
-                          <img
-                            src={currentProfile.image}
-                            alt={currentProfile.name}
-                            className="drawer-crop-thumb"
-                          />
-                          <div className="drawer-current-crop-info">
-                            <div className="drawer-current-crop-top">
-                              <span className="drawer-current-eyebrow">CURRENT CROP</span>
-                              <select
-                                aria-label="Change current crop"
-                                className="drawer-inline-select"
-                                value={farm.crop}
-                                onChange={(e) => {
-                                  setManualCropOverride(true);
-                                  onUpdateFarm("crop", e.target.value);
-                                }}
-                              >
-                                {cropOptions.map((crop) => (
-                                  <option key={crop} value={crop}>
-                                    {crop}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="drawer-detection-row">
-                              <span className={`drawer-detection-pill ${manualCropOverride ? "is-manual" : ""}`}>
-                                {manualCropOverride
-                                  ? `Manual override · Satellite: ${cropDetection.detectedCrop} (${cropDetection.confidencePct}%)`
-                                  : `Detected: ${cropDetection.detectedCrop} · ${cropDetection.confidencePct}% (${cropDetection.detectionMethod})`}
-                              </span>
-                            </div>
-                            <strong>
-                              {currentProfile.name} / {currentProfile.localName}{" "}
-                              <em>({currentProfile.scientificName})</em>
-                            </strong>
-                            <p>{currentProfile.soilImpact}</p>
-                            {modisNdvi && modisNdvi.points.length >= 2 && (
-                              <div className="drawer-ndvi-sparkline" title="6-month MODIS MOD13Q1 16-day NDVI trend">
-                                <svg viewBox="0 0 120 22" width="120" height="22" aria-hidden="true">
-                                  <polyline
-                                    fill="none"
-                                    stroke="#15803d"
-                                    strokeWidth="1.75"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={modisNdvi.points
-                                      .map((pt, i, arr) => {
-                                        const x = (i / Math.max(1, arr.length - 1)) * 116 + 2;
-                                        const clamped = Math.max(0, Math.min(1, pt.ndvi));
-                                        const y = 20 - clamped * 18;
-                                        return `${x.toFixed(1)},${y.toFixed(1)}`;
-                                      })
-                                      .join(" ")}
-                                  />
-                                </svg>
-                                <span>
-                                  6-mo NDVI ({modisNdvi.points.length} pts · peak {modisNdvi.peakNdvi?.toFixed(2)})
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="drawer-sequence-heading">
-                          <span>THREE DEMO OPTIONS · NOT VALIDATED RECOMMENDATIONS</span>
-                        </div>
-
-                        <div className="drawer-timeline">
-                          {strategies.map((strategy, idx) => {
-                            const isExpanded = expandedStrategyId === strategy.id;
-                            return (
-                              <div
-                                key={strategy.id}
-                                className={`drawer-timeline-card ${isExpanded ? "is-expanded" : ""}`}
-                              >
-                                <button
-                                  type="button"
-                                  className="drawer-timeline-summary"
-                                  onClick={() => setExpandedStrategyId(isExpanded ? "" : strategy.id)}
-                                >
-                                  <span className="timeline-step-num">{idx + 1}</span>
-                                  <img
-                                    src={strategy.nextCropImage}
-                                    alt={strategy.nextCrop}
-                                    className="drawer-crop-thumb"
-                                  />
-                                  <div className="timeline-summary-copy">
-                                    <div className="timeline-meta-row">
-                                      <span className="timeline-window">
-                                        {strategy.plantingWindow} · {strategy.cycleDays}
-                                      </span>
-                                      <span className="timeline-match-pill">
-                                        {Math.round(strategy.total)} / 100 · Demo
-                                      </span>
-                                    </div>
-                                    <strong>
-                                      {strategy.nextCrop} / {strategy.nextCropLocalName}{" "}
-                                      <em>({strategy.nextCropScientificName})</em>
-                                    </strong>
-                                    <p>{strategy.satelliteWhy[0]}</p>
-                                  </div>
-                                  <ChevronDown
-                                    size={15}
-                                    className={`timeline-chevron ${isExpanded ? "is-open" : ""}`}
-                                  />
-                                </button>
-
-                                <div
-                                  className={`drawer-collapse ${isExpanded ? "is-open" : ""}`}
-                                  aria-hidden={!isExpanded}
-                                >
-                                  <div className="drawer-collapse-inner">
-                                    <div className="drawer-timeline-details">
-                                      <div className="drawer-detail-tabs">
-                                        <button
-                                          type="button"
-                                          className={detailTab === "proscons" ? "is-active" : ""}
-                                          onClick={() => setDetailTab("proscons")}
-                                        >
-                                          Pros &amp; Cons
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={detailTab === "pests" ? "is-active" : ""}
-                                          onClick={() => setDetailTab("pests")}
-                                        >
-                                          Pests &amp; Mitigations ({strategy.pestsAndDiseases.length})
-                                        </button>
-                                      </div>
-
-                                      {detailTab === "proscons" ? (
-                                        <div className="drawer-proscons-grid">
-                                          <div>
-                                            <strong className="pros-title">Pros</strong>
-                                            <ul>
-                                              {strategy.pros.map((item) => (
-                                                <li key={item}>{item}</li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                          <div>
-                                            <strong className="cons-title">Cons &amp; Trade-offs</strong>
-                                            <ul>
-                                              {strategy.cons.map((item) => (
-                                                <li key={item}>{item}</li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="drawer-pests-list">
-                                          {strategy.pestsAndDiseases.map((pest) => (
-                                            <div key={pest.name} className="drawer-pest-item">
-                                              <div className="drawer-pest-head">
-                                                <strong>{pest.name}</strong>
-                                                <span
-                                                  className={`risk-pill risk-${pest.riskLevel.toLowerCase()}`}
-                                                >
-                                                  {pest.riskLevel} Risk
-                                                </span>
-                                              </div>
-                                              <small>
-                                                <b>Trigger:</b> {pest.riskWindow}
-                                              </small>
-                                              <small>
-                                                <b>Mitigation:</b> {pest.mitigation}
-                                              </small>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      <div className="drawer-verification-tags">
-                                        {strategy.verificationTags.map((tag) => (
-                                          <span key={tag}>{tag}</span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })()
+              <NextCropPlanner
+                location={location}
+                locationConfirmed={locationConfirmed}
+                farm={farm}
+                onUpdate={onUpdateFarm}
+                terrain={terrain}
+                onResult={onPlannerResult}
+                onAskAdvisor={onAskAdvisor}
+              />
             )}
 
             {drawerTab !== "recovery" && onContinue && (
@@ -2572,6 +2221,8 @@ export function FullFarmMap({
                 </Button>
               </div>
             )}
+            </div>
+            {advisorContent}
           </aside>
         )}
 

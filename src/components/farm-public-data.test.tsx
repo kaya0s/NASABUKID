@@ -64,7 +64,7 @@ it("automatically fills a confirmed location with independently sourced city and
   const sources = screen.getByText("Sources & API details").closest("details");
   expect(sources).not.toHaveAttribute("open");
   fireEvent.click(screen.getByText("Sources & API details"));
-  expect(screen.getByRole("link", { name: /Exact SoilGrids JSON/ })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /Exact SoilGrids response/ })).toHaveAttribute(
     "href",
     expect.stringContaining("depth=5-15cm"),
   );
