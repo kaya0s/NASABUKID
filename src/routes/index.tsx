@@ -59,6 +59,8 @@ import landingHighlandFields from "@/assets/landing-highland-fields.jpg";
 import landingTerracedHills from "@/assets/landing-terraced-hills.jpg";
 import landingCornSky from "@/assets/landing-corn-sky.jpg";
 import landingCarabaoPlow from "@/assets/landing-carabao-plow.jpg";
+import ricePalayBundle from "@/assets/rice-palay-bundle.png";
+import recoveryCycle from "@/assets/recovery-cycle.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -763,6 +765,14 @@ function FieldShift() {
             historical={historical}
             climateLoading={climateLoading}
             terrain={terrain}
+            cropOptions={CROP_OPTIONS}
+            previousCropOptions={PREVIOUS_CROP_OPTIONS}
+            recoveryDetails={{
+              actualPlantingDate,
+              growthStage,
+              durationHours,
+              observations,
+            }}
           />
         ) : (
           <div className="page-wrap">
@@ -992,8 +1002,8 @@ function LandingPage({
             className="landing-mode-btn is-rotation"
             onClick={() => onSelectMode("rotation")}
           >
-            <span className="landing-mode-icon">
-              <Sprout size={20} strokeWidth={2.1} />
+            <span className="landing-mode-icon" aria-hidden="true">
+              <img src={ricePalayBundle} alt="" className="mode-icon-img is-palay" />
             </span>
             <span className="landing-mode-copy">
               <strong>Crop Rotation</strong>
@@ -1007,8 +1017,8 @@ function LandingPage({
             className="landing-mode-btn is-recovery"
             onClick={() => onSelectMode("recovery")}
           >
-            <span className="landing-mode-icon">
-              <ShieldAlert size={20} strokeWidth={2.1} />
+            <span className="landing-mode-icon" aria-hidden="true">
+              <img src={recoveryCycle} alt="" className="mode-icon-img is-recovery-cycle" />
             </span>
             <span className="landing-mode-copy">
               <strong>Disaster Recovery</strong>
