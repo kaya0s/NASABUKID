@@ -3,6 +3,16 @@ import type { RotationClimate } from "./nasa-power";
 
 export const SAMPLE_RECOVERY = { affected: 65, yieldLoss: 35 } as const;
 
+export const RECOVERY_DEMO_OBSERVATIONS = {
+  Flooding: "Standing water observed between rows; sample leaf yellowing and stem lodging visible.",
+  Drought: "Sample observation: leaf curling and dry surface soil are consistent with water stress.",
+  Typhoon: "Sample observation: wind lodging and damaged leaf tissue may reduce harvestable yield.",
+  Heat: "Sample observation: leaf-edge scorch and midday wilting may indicate heat stress.",
+  "Human-caused": "Describe what happened below. No cause or crop damage has been verified.",
+} as const;
+
+export type RecoveryHazard = keyof typeof RECOVERY_DEMO_OBSERVATIONS;
+
 export type ClimateScenario = "Typical" | "El Niño-like" | "Wet";
 
 export type Rotation = {

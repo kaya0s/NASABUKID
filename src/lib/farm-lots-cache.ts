@@ -9,7 +9,7 @@ import { coordinatesSchema, type Coordinates } from "./nasa-power";
 export const FARM_LOTS_CACHE_STORAGE_KEY = "nasabukid-farm-lots-v1";
 export const MAX_LOT_NAME_LENGTH = 48;
 
-export type LotHazard = "Flooding" | "Drought" | "Typhoon" | "Heat";
+export type LotHazard = "Flooding" | "Drought" | "Typhoon" | "Heat" | "Human-caused";
 
 export type CachedFarmProfile = {
   place: string;

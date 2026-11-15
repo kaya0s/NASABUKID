@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, Globe, Layers, Loader2, Locate, MapPin, Pencil, RotateCcw, Search, ShieldAlert, ShieldCheck, Sprout, Sun, ThermometerSun, Trash2, Waves, Wind, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Activity, ArrowRight, BadgeCheck, Check, ChevronDown, CloudRain, Droplets, ExternalLink, FileDown, Globe, Layers, Loader2, Locate, MapPin, Pencil, RotateCcw, Search, ShieldAlert, ShieldCheck, Sprout, Sun, ThermometerSun, Trash2, Waves, Wind, X, ZoomIn, ZoomOut } from "lucide-react";
 import bukidnonFields from "@/assets/bukidnon-fields.jpg";
 import { Button } from "@/components/ui/button";
 import { NextCropPlanner, type PlannerResult } from "@/components/next-crop-planner";
 import { SavedLotsBar } from "@/components/saved-lots-bar";
+import { PrintReport } from "@/components/print-report";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,7 +20,7 @@ import { measureFarmBoundary } from "@/lib/farm-boundary";
 import { checkFarmLandUse, type LandUseCheckResult } from "@/lib/farm-context";
 import type { CachedFarmLot } from "@/lib/farm-lots-cache";
 import { RECOVERY_STEPS } from "@/lib/advisor";
-import { calculateEstimatedLoss } from "@/lib/fieldshift-demo";
+import { calculateEstimatedLoss, type RecoveryHazard } from "@/lib/fieldshift-demo";
 import {
   LanguageTogglePill,
   translateCompactHazardMeta,
@@ -40,7 +41,7 @@ import {
 type MapStyle = "satellite" | "street";
 type HeatmapLayer = "none" | "lst" | "soil_moisture" | "ndvi";
 type AdvisoryMode = "rotation" | "recovery";
-type HazardType = "Flooding" | "Drought" | "Typhoon" | "Heat";
+type HazardType = RecoveryHazard;
 const ENABLE_FARM_LOT_VERIFICATION = false;
 const SHOW_COMPACT_RECOVERY_UI = false;
 const ENABLE_RECOVERY_MODAL = false;
@@ -104,6 +105,11 @@ const RECOVERY_HAZARDS: Record<
     icon: ThermometerSun,
     summary: "Monitor topsoil heat, leaf scorch, and midday wilting on exposed slopes.",
     replantNote: "Cover crops or heat-tolerant varieties help protect exposed topsoil.",
+  },
+  "Human-caused": {
+    icon: ShieldAlert,
+    summary: "Record what happened and document visible damage from a safe location.",
+    replantNote: "Seek a local assessment before treating the field or deciding to replant.",
   },
 };
 
@@ -361,16 +367,18 @@ function createBaseLayer(L: Leaflet, style: MapStyle, onTileError: () => void): 
       subdomains: ["0", "1", "2", "3"],
       maxNativeZoom: 20,
       maxZoom: 21,
-      keepBuffer: 4,
+      keepBuffer: 6,
       updateWhenZooming: false,
+      updateWhenIdle: true,
       attribution: "Map data &copy; Google",
     }).on("tileerror", onTileError);
   }
   return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxNativeZoom: 19,
     maxZoom: 21,
-    keepBuffer: 4,
+    keepBuffer: 6,
     updateWhenZooming: false,
+    updateWhenIdle: true,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).on("tileerror", onTileError);
 }
@@ -386,8 +394,9 @@ function createHeatmapLayer(
     maxZoom: 21,
     opacity: 0.68,
     zIndex: 4,
-    keepBuffer: 2,
+    keepBuffer: 4,
     updateWhenZooming: false,
+    updateWhenIdle: true,
     attribution: "NASA GIBS",
   }).on("tileerror", onTileError);
 }
@@ -465,6 +474,7 @@ export function FullFarmMap({
   cachedPlannerResult = null,
   cachedPlannedDate = "",
   onPlannedDateChange,
+  recoveryDetails,
 }: {
   location: Coordinates;
   onChange: (point: Coordinates) => void;
@@ -514,6 +524,12 @@ export function FullFarmMap({
   cachedPlannerResult?: PlannerResult | null;
   cachedPlannedDate?: string;
   onPlannedDateChange?: (date: string) => void;
+  recoveryDetails?: {
+    actualPlantingDate?: string;
+    growthStage?: string;
+    durationHours?: string;
+    observations?: string;
+  };
 }) {
   const { locale, isSwitching: localeSwitching } = useAppLocale();
   const isCeb = locale === "ceb";
@@ -562,6 +578,12 @@ export function FullFarmMap({
   const [drawerTab, setDrawerTab] = useState<"rotation" | "recovery">(
     !ENABLE_RECOVERY_MODAL && advisoryMode === "recovery" ? "recovery" : "rotation",
   );
+  const [printPlan, setPrintPlan] = useState<PlannerResult | null>(cachedPlannerResult);
+  const [exportMode, setExportMode] = useState(false);
+
+  useEffect(() => {
+    setPrintPlan(cachedPlannerResult);
+  }, [cachedPlannerResult]);
   const leftPanelRef = useRef<HTMLElement | null>(null);
   const rightPanelRef = useRef<HTMLElement | null>(null);
   const addressRef = useRef<HTMLTextAreaElement | null>(null);
@@ -627,6 +649,50 @@ export function FullFarmMap({
   const moisture = activeHistorical?.soilMoisturePercent ?? null;
   const surfaceTemp = activeHistorical?.surfaceTempC ?? climateSummary?.temperature ?? null;
   const rain30 = activeHistorical?.recent30dRainfallMm ?? climateSummary?.rainfall ?? null;
+
+  // Stable identity: NextCropPlanner emits its result from an effect keyed on this callback.
+  const handlePlannerResult = useCallback(
+    (value: PlannerResult | null) => {
+      setPrintPlan(value);
+      onPlannerResult?.(value);
+    },
+    [onPlannerResult],
+  );
+
+  const printArea = Number(farm.area);
+  const printYield = Number(activeExpectedYield);
+  const printPrice = Number(activePrice);
+  const printLoss =
+    Number.isFinite(printArea) &&
+    printArea >= 0 &&
+    Number.isFinite(printYield) &&
+    printYield >= 0 &&
+    Number.isFinite(printPrice) &&
+    printPrice >= 0
+      ? calculateEstimatedLoss({
+          areaHectares: printArea,
+          affectedFraction: activeAffected / 100,
+          expectedYieldKgPerHectare: printYield,
+          yieldLossFraction: activeYieldLoss / 100,
+          pricePerKg: printPrice,
+        })
+      : null;
+
+  // Export waits one paint so the printable report exists before the print dialog snapshots it.
+  useEffect(() => {
+    if (!exportMode) return undefined;
+    const originalTitle = document.title;
+    document.title = "NASABUKID - Crop Rotation & Disaster Recovery Report";
+    const timer = window.setTimeout(() => {
+      window.print();
+      document.title = originalTitle;
+      setExportMode(false);
+    }, 60);
+    return () => {
+      window.clearTimeout(timer);
+      document.title = originalTitle;
+    };
+  }, [exportMode]);
 
   useEffect(() => {
     if (!hasValidBoundary) {
@@ -2432,6 +2498,15 @@ return (
               <div className="full-map-profile-head-right">
                 <button
                   type="button"
+                  className="full-map-export-pdf-btn"
+                  title="Export the rotation result and disaster recovery loss check as one PDF"
+                  onClick={() => setExportMode(true)}
+                >
+                  <FileDown size={13} />
+                  <span>Export PDF</span>
+                </button>
+                <button
+                  type="button"
                   className="full-map-profile-close"
                   aria-label={isCeb ? "Isira ang panel sa tambag" : "Close advisory panel"}
                   onClick={() => setProfileOpen(false)}
@@ -2610,7 +2685,7 @@ return (
                           farm={farm}
                           onUpdate={onUpdateFarm}
                           terrain={terrain}
-                          onResult={onPlannerResult}
+                          onResult={handlePlannerResult}
                           onAskAdvisor={onAskAdvisor}
                           activeLotId={activeLotId}
                           cachedResult={cachedPlannerResult}
@@ -3039,6 +3114,34 @@ return (
         </div>
       )
     }
+
+    {/* Printable-only report: hidden on screen, shown by @media print in styles.css */}
+    {exportMode ? (
+      <PrintReport
+        farm={farm}
+        location={location}
+        terrain={terrain}
+        historical={activeHistorical}
+        ndvi={modisNdvi?.latestNdvi ?? null}
+        plan={printPlan}
+        recovery={{
+          hazard: activeHazard,
+          damageDate: activeDamageDate,
+          actualPlantingDate: recoveryDetails?.actualPlantingDate ?? "",
+          growthStage: recoveryDetails?.growthStage ?? "",
+          durationHours: recoveryDetails?.durationHours ?? "",
+          observations: recoveryDetails?.observations ?? "",
+          affected: activeAffected,
+          yieldLoss: activeYieldLoss,
+          expectedYield: activeExpectedYield,
+          price: activePrice,
+          area: farm.area,
+          loss: printLoss,
+          replantNote: RECOVERY_HAZARDS[activeHazard].replantNote,
+          steps: RECOVERY_STEPS[activeHazard],
+        }}
+      />
+    ) : null}
   </div >
 );
 }

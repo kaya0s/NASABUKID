@@ -66,7 +66,7 @@ function stubLeafletMap() {
       addTo: vi.fn().mockReturnThis(),
     }),
     marker: vi.fn((_coords: [number, number], opts?: { icon?: { html?: string } }) => {
-      if (opts?.icon?.html?.includes("full-map-location-dot")) {
+      if (opts?.icon?.html?.includes("full-map-location-pin")) {
         pinHtmls.push(opts.icon.html);
         return mainMarker;
       }
@@ -240,7 +240,8 @@ describe("pointed location gating for lots and stats cards", () => {
 
     // No lot bar, no lot pin badge, no stats cards, no SoilGrids/climate/NDVI calls
     expect(screen.queryByTestId("saved-lots-bar")).toBeNull();
-    expect(pinHtmls.every((html) => !html.includes("full-map-lot-pin-label"))).toBe(true);
+    expect(pinHtmls.length).toBeGreaterThan(0);
+    expect(pinHtmls.every((html) => !html.includes("full-map-lot-name-tag"))).toBe(true);
     expect(screen.queryByText("MOISTURE")).toBeNull();
     expect(screen.queryByText("HEAT")).toBeNull();
     expect(screen.queryByText("RAIN")).toBeNull();
@@ -277,7 +278,17 @@ describe("pointed location gating for lots and stats cards", () => {
     expect(afterLotUrls.some((u) => u.includes("power.larc.nasa.gov/api/temporal/daily"))).toBe(true);
     expect(afterLotUrls.some((u) => u.includes("modis.ornl.gov"))).toBe(true);
 
-    // Pointing elsewhere again detaches from Lot 1 without labelling the pointed spot as a lot or showing stats
+    // Clicking + New lot, cancelling draw mode, and pointing elsewhere detaches from Lot 1 without labelling the pointed spot as a lot or showing stats
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /New lot/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Cancel/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     await act(async () => {
       mapHandlers["click"]?.({ latlng: { lat: 7.81, lng: 125.02 } });
       await Promise.resolve();
@@ -286,6 +297,6 @@ describe("pointed location gating for lots and stats cards", () => {
 
     expect(screen.queryByText("MOISTURE")).toBeNull();
     expect(screen.getByTestId("saved-lots-bar").textContent).toContain("Saved lots");
-    expect(pinHtmls.at(-1)).not.toContain("full-map-lot-pin-label");
+    expect(pinHtmls.at(-1)).not.toContain("full-map-lot-name-tag");
   });
 });

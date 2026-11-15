@@ -160,7 +160,7 @@ export function AdvisorChat({
           </p>
         )}
       </div>
-      {messages.length === 1 && (
+      {messages.length <= 1 && (
         <div
           className="advisor-chat-questions"
           aria-label={isCeb ? "Girekomendang pangutana" : "Suggested questions"}

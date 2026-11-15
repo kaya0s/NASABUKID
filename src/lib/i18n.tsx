@@ -127,22 +127,25 @@ export function translateFieldOption(value: string, locale: AppLocale): string {
   return FIELD_OPTION_CEBUANO[value] ?? value;
 }
 
-const HAZARD_CEBUANO: Record<"Flooding" | "Drought" | "Typhoon" | "Heat", string> = {
+type LocalizedHazard = "Flooding" | "Drought" | "Typhoon" | "Heat" | "Human-caused";
+
+const HAZARD_CEBUANO: Record<LocalizedHazard, string> = {
   Flooding: "Pagbaha",
   Drought: "Hulaw",
   Typhoon: "Bagyo",
   Heat: "Sobra nga kainit",
+  "Human-caused": "Hinimo sa tawo",
 };
 
 export function translateHazardName(
-  hazard: "Flooding" | "Drought" | "Typhoon" | "Heat",
+  hazard: LocalizedHazard,
   locale: AppLocale,
 ): string {
   if (locale === "en") return hazard;
   return HAZARD_CEBUANO[hazard] ?? hazard;
 }
 
-const HAZARD_OBSERVATION_CEBUANO: Record<"Flooding" | "Drought" | "Typhoon" | "Heat", string> = {
+const HAZARD_OBSERVATION_CEBUANO: Record<LocalizedHazard, string> = {
   Flooding:
     "Adunay napundo nga tubig taliwala sa mga tudling; may sampol nga pagdalag sa dahon ug paghapa sa punoan.",
   Drought:
@@ -150,10 +153,11 @@ const HAZARD_OBSERVATION_CEBUANO: Record<"Flooding" | "Drought" | "Typhoon" | "H
   Typhoon:
     "Nangahapa ang mga punoan ug nangagisi ang dahon tungod sa kusog nga hangin ug ulan.",
   Heat: "Nangasunog ang ngilit sa dahon ug nangaumol ang tanom samtang nagpadayon ang init nga panahon.",
+  "Human-caused": "Walay sampol nga obserbasyon alang sa kadaot nga hinimo sa tawo.",
 };
 
 export function translateHazardObservation(
-  hazard: "Flooding" | "Drought" | "Typhoon" | "Heat",
+  hazard: LocalizedHazard,
   fallback: string,
   locale: AppLocale,
 ): string {
@@ -161,7 +165,7 @@ export function translateHazardObservation(
   return HAZARD_OBSERVATION_CEBUANO[hazard] ?? fallback;
 }
 
-const RECOVERY_STEPS_CEBUANO: Record<"Flooding" | "Drought" | "Typhoon" | "Heat", string[]> = {
+const RECOVERY_STEPS_CEBUANO: Record<LocalizedHazard, string[]> = {
   Flooding: [
     "Irekord kon unsa kadugay napundo ang tubig ug kon nihubas na ba kini; tan-awa gikan sa luwas nga lugar.",
     "Idokumento ang naapektuhan nga bahin ug ang edad sa tanom alang sa lokal nga pagsusi sa uma.",
@@ -182,10 +186,15 @@ const RECOVERY_STEPS_CEBUANO: Record<"Flooding" | "Drought" | "Typhoon" | "Heat"
     "Susiha ang pagkasunog sa dahon ug mga ilhanan sa kahimsog sa uma sa imong lugar.",
     "Gamita ang mulch o igong pagpamubo kon anaa una pa mananom pag-usab.",
   ],
+  "Human-caused": [
+    "Irekord ang eksaktong petsa, hinungdan, ug gidak-on sa kadaot sa umahan.",
+    "Idokumento ang apektadong bahin sa tanom sa luwas nga paagi.",
+    "Kumpirmaha sa lokal nga technician kon luwas na ang yuta una mananom pag-usab.",
+  ],
 };
 
 export function translateRecoverySteps(
-  hazard: "Flooding" | "Drought" | "Typhoon" | "Heat",
+  hazard: LocalizedHazard,
   fallback: readonly string[],
   locale: AppLocale,
 ): readonly string[] {
@@ -194,7 +203,7 @@ export function translateRecoverySteps(
 }
 
 const COMPACT_HAZARD_COPY_CEBUANO: Record<
-  "Flooding" | "Drought" | "Typhoon" | "Heat",
+  LocalizedHazard,
   { summary: string; replantNote: string }
 > = {
   Flooding: {
@@ -220,10 +229,16 @@ const COMPACT_HAZARD_COPY_CEBUANO: Record<
     replantNote:
       "Ang cover crops o mga barayti nga makasugakod sa kainit makapanalipod sa ibabaw nga yuta.",
   },
+  "Human-caused": {
+    summary:
+      "Susiha ang kadaot sa istruktura, yuta, o kagamitan ug ilahi ang luwas pang maani nga tanom.",
+    replantNote:
+      "Kumpirmaha nga luwas ug andam na ang yuta una pa modesisyon sa pagtanom pag-usab.",
+  },
 };
 
 export function translateCompactHazardMeta(
-  hazard: "Flooding" | "Drought" | "Typhoon" | "Heat",
+  hazard: LocalizedHazard,
   fallback: { summary: string; replantNote: string },
   locale: AppLocale,
 ) {
