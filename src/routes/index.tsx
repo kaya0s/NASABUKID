@@ -47,7 +47,6 @@ import {
   Sprout,
   Sun,
   Thermometer,
-  Upload,
   Waves,
   Wheat,
   Wind,
@@ -175,6 +174,7 @@ const SEED_FARM: Farm = {
  */
 const SHOW_API_SOURCES = false;
 const SHOW_FOOTER_NASA_INFO = false;
+const SAMPLE_RECOVERY_PHOTO = { src: floodCorn, name: "Sample · waterlogged corn", sample: true } as const;
 const HAZARD_ICONS: Record<Hazard, typeof Waves> = {
   Flooding: Waves,
   Drought: Sun,
@@ -233,15 +233,7 @@ function FieldShift() {
   const [damageDate, setDamageDate] = useState("2026-10-29");
   const [affected, setAffected] = useState(65);
   const [yieldLoss, setYieldLoss] = useState(35);
-  const [photo, setPhoto] = useState<{
-    src: string;
-    name: string;
-    sample: boolean;
-  }>({
-    src: floodCorn,
-    name: "Sample · waterlogged corn",
-    sample: true,
-  });
+  const photo = SAMPLE_RECOVERY_PHOTO;
   const [advisorLanguage, setAdvisorLanguage] = useState<AdvisorLanguage>("auto");
   const [advisorOpen, setAdvisorOpen] = useState(false);
   const explainedPlanKey = useRef<string | null>(null);
@@ -249,7 +241,6 @@ function FieldShift() {
   const [chatMessages, setChatMessages] = useState<AdvisorMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const uploadRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -422,16 +413,6 @@ function FieldShift() {
       setPrice("");
     }
     setFarm((current) => ({ ...current, [key]: value }));
-  }
-
-  function pickPhoto(file?: File) {
-    if (!file || !file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string")
-        setPhoto({ src: reader.result, name: file.name, sample: false });
-    };
-    reader.readAsDataURL(file);
   }
 
   function changeHazard(next: Hazard) {
@@ -615,8 +596,6 @@ function FieldShift() {
     onUpdateFarm: updateFarm,
     location,
     photo,
-    pickPhoto,
-    uploadRef,
     loss,
     onPlan: openRecoveryAdvisor,
   };
@@ -1453,8 +1432,6 @@ function RecoveryPage({
   yieldLoss,
   setYieldLoss,
   photo,
-  pickPhoto,
-  uploadRef,
   loss,
   onPlan,
   price,
@@ -1488,8 +1465,6 @@ function RecoveryPage({
   yieldLoss: number;
   setYieldLoss: (value: number) => void;
   photo: { src: string; name: string; sample: boolean };
-  pickPhoto: (file?: File) => void;
-  uploadRef: React.RefObject<HTMLInputElement | null>;
   loss: number;
   onPlan: () => void;
   embedStep?: 1 | 2;
@@ -1576,28 +1551,11 @@ function RecoveryPage({
       </div>
       <div className="photo-heading">
         <div>
-          <Label>
-            Crop photo <span className="optional-label">OPTIONAL</span>
-          </Label>
-          <span className="photo-caption">Add a photo if you have one. Photos are not analyzed.</span>
+          <Label>Sample crop photo</Label>
+          <span className="photo-caption">Fixed demo image · not analyzed</span>
         </div>
-        <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
-          <Upload size={14} /> Add a photo
-        </Button>
-        <input
-          ref={uploadRef}
-          className="sr-only"
-          type="file"
-          accept="image/*"
-          aria-label="Upload crop photo"
-          onChange={(event) => pickPhoto(event.target.files?.[0])}
-        />
       </div>
-      <button
-        className="photo-preview"
-        onClick={() => uploadRef.current?.click()}
-        aria-label="Choose a crop photo"
-      >
+      <div className="photo-preview photo-preview-static">
         {photo.sample && hazard === "Human-caused" ? (
           <span className="photo-empty">No event photo added</span>
         ) : (
@@ -1609,12 +1567,7 @@ function RecoveryPage({
         <span className="photo-badge">
           <ImagePlus size={12} /> {photo.sample && hazard === "Human-caused" ? "NO PHOTO" : photo.sample ? "SAMPLE PHOTO" : "YOUR PHOTO"}
         </span>
-        <span className="photo-overlay">
-          <span>
-            <Upload size={16} /> Change photo
-          </span>
-        </span>
-      </button>
+      </div>
       <span className="file-caption">
         {photo.sample && hazard === "Human-caused" ? "No photo added" : photo.name} <span>· Image preview stays in this browser only</span>
       </span>

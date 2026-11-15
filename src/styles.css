@@ -3019,3 +3019,9 @@
 .advisor-chat-header > .advisor-chat-language + button { margin-left: 0; }
 .advisor-chat-language[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); }
 .advisor-chat-language-note { display: block; margin-top: 4px; color: var(--primary); }
+
+/* Keep recovery visuals and steps fixed for presentation demos. */
+.recovery-slide-stage,
+.recovery-slide-stage.is-enter-left,
+.recovery-slide-stage.is-enter-right { animation: none !important; will-change: auto; }
+.photo-preview-static { cursor: default; }
