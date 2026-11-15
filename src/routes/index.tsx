@@ -84,6 +84,7 @@ import landingHighlandFields from "@/assets/landing-highland-fields.jpg";
 import landingTerracedHills from "@/assets/landing-terraced-hills.jpg";
 import landingCornSky from "@/assets/landing-corn-sky.jpg";
 import landingCarabaoPlow from "@/assets/landing-carabao-plow.jpg";
+import nasabukidLogo from "@/assets/nasabukid-logo.jpg";
 import ricePalayBundle from "@/assets/rice-palay-bundle.png";
 import recoveryCycle from "@/assets/recovery-cycle.png";
 import { Button } from "@/components/ui/button";
@@ -1232,24 +1233,7 @@ function LandingPage({
       <main className={`landing-center-stage ${isSwitching ? "is-locale-switching" : ""}`}>
         <div className="landing-brand-lockup">
           <div className="landing-emblem" aria-hidden="true">
-            <svg viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="42" cy="42" r="37" stroke="#F4C44E" strokeWidth="2.75" />
-              <circle cx="42" cy="34" r="10.5" fill="#FACC5B" />
-              <path
-                d="M42 40V60"
-                stroke="#6EE7B7"
-                strokeWidth="3.8"
-                strokeLinecap="round"
-              />
-              <path
-                d="M42 50C42 42 33 36 25 36.5C25.5 45 33 51.5 42 50Z"
-                fill="#86EFAC"
-              />
-              <path
-                d="M42 47C42 39 51 33 59 33.5C58.5 42 51 48.5 42 47Z"
-                fill="#6EE7B7"
-              />
-            </svg>
+            <img src={nasabukidLogo} alt="" className="landing-emblem-img" />
           </div>
 
           <h1 className="landing-title">

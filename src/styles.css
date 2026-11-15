@@ -4377,6 +4377,7 @@
     right: calc(var(--right-card-w) + 28px);
   }
 }
+
 .full-map-profile-head {
   display: flex;
   align-items: flex-start;
@@ -4463,6 +4464,7 @@
 .full-map-profile-grid .full-span {
   grid-column: 1 / -1;
 }
+
 .full-map-nasa-snapshot {
   margin-top: 12px;
   padding: 10px 12px;
@@ -6998,14 +7000,22 @@
   width: clamp(74px, 9.5vw, 116px);
   height: clamp(74px, 9.5vw, 116px);
   flex-shrink: 0;
-  filter: drop-shadow(0 14px 36px rgba(250, 204, 91, 0.28));
+  padding: clamp(4px, 0.5vw, 6px);
+  border-radius: clamp(16px, 2.2vw, 24px);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow:
+    0 16px 38px rgba(4, 15, 9, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.22);
   animation: landingEmblemIn 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.landing-emblem svg {
+.landing-emblem-img {
   width: 100%;
   height: 100%;
+  object-fit: contain;
   display: block;
+  border-radius: clamp(12px, 1.7vw, 18px);
 }
 
 .landing-title {
@@ -9667,7 +9677,9 @@ details[open]>ul {
     size: A4 portrait;
     margin: 15mm;
   }
-  body, html {
+
+  body,
+  html {
     background: #ffffff !important;
     color: #0f172a !important;
     font-size: 11pt !important;
@@ -9749,11 +9761,13 @@ details[open]>ul {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
   .print-brand-row {
     display: flex !important;
     justify-content: space-between !important;
     align-items: flex-start !important;
   }
+
   .print-brand-title h1 {
     font-size: 22pt !important;
     font-weight: 800 !important;
@@ -9762,6 +9776,7 @@ details[open]>ul {
     margin: 0 !important;
     line-height: 1.1 !important;
   }
+
   .print-brand-tagline {
     font-size: 9pt !important;
     color: #64748b !important;
@@ -9769,6 +9784,7 @@ details[open]>ul {
     display: block !important;
     margin-top: 2px !important;
   }
+
   .print-report-meta {
     text-align: right !important;
     font-size: 8.5pt !important;
@@ -9777,6 +9793,7 @@ details[open]>ul {
     flex-direction: column !important;
     gap: 2px !important;
   }
+
   .print-report-notice {
     margin-top: 8px !important;
     font-size: 8pt !important;
@@ -9806,6 +9823,7 @@ details[open]>ul {
     break-after: avoid !important;
     page-break-after: avoid !important;
   }
+
   .print-section-title {
     font-size: 11pt !important;
     font-weight: 700 !important;
@@ -9818,6 +9836,7 @@ details[open]>ul {
     break-after: avoid !important;
     page-break-after: avoid !important;
   }
+
   .print-section-desc {
     font-size: 8.5pt !important;
     color: #64748b !important;
@@ -9837,6 +9856,7 @@ details[open]>ul {
     border-collapse: collapse !important;
     font-size: 8.5pt !important;
   }
+
   .print-table th,
   .print-table td {
     padding: 4.5px 6px !important;
@@ -9844,19 +9864,23 @@ details[open]>ul {
     text-align: left !important;
     vertical-align: top !important;
   }
+
   .print-table th {
     background: #f8fafc !important;
     color: #475569 !important;
     font-weight: 600 !important;
     width: 38% !important;
   }
+
   .print-table-full th {
     width: auto !important;
   }
+
   .print-table-full tr {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
   .print-highlight-row th,
   .print-highlight-row td {
     background: #fef2f2 !important;
@@ -9873,6 +9897,7 @@ details[open]>ul {
     font-weight: 700 !important;
     font-size: 9pt !important;
   }
+
   .print-sub-scores {
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
@@ -9880,12 +9905,14 @@ details[open]>ul {
     font-size: 7.5pt !important;
     color: #475569 !important;
   }
+
   .print-cell-para {
     font-size: 8pt !important;
     color: #334155 !important;
     margin: 0 !important;
     line-height: 1.35 !important;
   }
+
   .print-text-muted {
     font-size: 8pt !important;
     color: #64748b !important;
@@ -9900,6 +9927,7 @@ details[open]>ul {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
   .print-loss-head {
     display: flex !important;
     justify-content: space-between !important;
@@ -9908,10 +9936,12 @@ details[open]>ul {
     font-size: 9pt !important;
     color: #0f172a !important;
   }
+
   .print-loss-head strong {
     color: #dc2626 !important;
     font-size: 10pt !important;
   }
+
   .print-replant-highlight {
     background: #eff6ff !important;
     border-left: 3px solid #3b82f6 !important;
@@ -9921,6 +9951,7 @@ details[open]>ul {
     border-radius: 0 4px 4px 0 !important;
     margin-bottom: 6px !important;
   }
+
   .print-steps-list {
     margin: 0 !important;
     padding-left: 18px !important;
@@ -9928,6 +9959,7 @@ details[open]>ul {
     color: #334155 !important;
     line-height: 1.35 !important;
   }
+
   .print-steps-list li {
     margin-bottom: 3px !important;
   }
@@ -9939,6 +9971,7 @@ details[open]>ul {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
   .print-telemetry-box {
     border: 1px solid #e2e8f0 !important;
     border-radius: 5px !important;
@@ -9946,6 +9979,7 @@ details[open]>ul {
     background: #f8fafc !important;
     text-align: center !important;
   }
+
   .print-telemetry-lbl {
     display: block !important;
     font-size: 7pt !important;
@@ -9953,6 +9987,7 @@ details[open]>ul {
     color: #64748b !important;
     letter-spacing: 0.5px !important;
   }
+
   .print-telemetry-val {
     display: block !important;
     font-size: 13pt !important;
@@ -9960,6 +9995,7 @@ details[open]>ul {
     color: #0f172a !important;
     margin: 2px 0 !important;
   }
+
   .print-telemetry-sub {
     display: block !important;
     font-size: 7pt !important;
@@ -9978,8 +10014,15 @@ details[open]>ul {
     page-break-inside: avoid !important;
   }
 }
+
 /* Keep recovery visuals and steps fixed for presentation demos. */
 .recovery-slide-stage,
 .recovery-slide-stage.is-enter-left,
-.recovery-slide-stage.is-enter-right { animation: none !important; will-change: auto; }
-.photo-preview-static { cursor: default; }
+.recovery-slide-stage.is-enter-right {
+  animation: none !important;
+  will-change: auto;
+}
+
+.photo-preview-static {
+  cursor: default;
+}
